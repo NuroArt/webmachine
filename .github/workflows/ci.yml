@@ -1,0 +1,44 @@
+name: ci
+
+# The point of this workflow is to make the test ladder a gate rather than
+# something you remember to run. A red suite blocks the merge, and Railway
+# deploys from main, so a red suite never reaches production.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # mongodb-memory-server downloads a MongoDB binary on first use. Caching
+      # it keeps the end-to-end job down to seconds on later runs.
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongo-bin-${{ runner.os }}-v1
+
+      - name: Every module parses and resolves
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WebMachine</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  /* Telegram supplies the palette. Everything derives from these so the app
+     matches whatever theme the user is running, light or dark. */
+  :root {
+    --bg: var(--tg-theme-bg-color, #15171b);
+    --surface: var(--tg-theme-secondary-bg-color, #1d2026);
+    --ink: var(--tg-theme-text-color, #f2f4f7);
+    --muted: var(--tg-theme-hint-color, #8d95a3);
+    --accent: var(--tg-theme-button-color, #3b82f6);
+    --accent-ink: var(--tg-theme-button-text-color, #ffffff);
+    --border: color-mix(in srgb, var(--ink) 14%, transparent);
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 16px/1.55 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 96px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 18px; }
+  .logo { font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
+  .logo span { color: var(--accent); }
+  .free-pill {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; white-space: nowrap;
+  }
+
+  h2 { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; margin: 26px 0 10px; color: var(--muted); text-transform: uppercase; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 10px;
+  }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .card-title { font-weight: 600; font-size: 16px; margin: 0; }
+  .card-sub { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
+  .card-price { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .card-price small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); text-align: right; }
+
+  ul.includes { margin: 12px 0 0; padding: 0; list-style: none; }
+  ul.includes li { color: var(--muted); font-size: 13px; padding: 2px 0 2px 16px; position: relative; }
+  ul.includes li::before { content: '·'; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+
+  button, .btn {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px;
+    padding: 12px 16px; cursor: pointer; width: 100%;
+    background: var(--accent); color: var(--accent-ink);
+    transition: transform .06s ease, opacity .15s ease;
+    text-align: center; text-decoration: none; display: block;
+  }
+  button:active { transform: scale(0.985); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); }
+  button.sm, .btn.sm { padding: 9px 12px; font-size: 14px; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-row > * { flex: 1; }
+  button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  label span { font-weight: 400; color: var(--muted); }
+  input, textarea {
+    font: inherit; width: 100%; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; resize: vertical;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+  .status { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+  .status.ready { background: color-mix(in srgb, #22c55e 22%, transparent); color: #4ade80; }
+  .status.failed, .status.refunded { background: color-mix(in srgb, #ef4444 22%, transparent); color: #f87171; }
+  .status.generating { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .notes { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .notes div { color: var(--muted); font-size: 12px; padding: 1px 0; }
+
+  .empty { text-align: center; color: var(--muted); padding: 34px 16px; }
+  .empty p { margin: 0 0 16px; }
+
+  .spinner {
+    width: 15px; height: 15px; border: 2px solid var(--accent-ink);
+    border-top-color: transparent; border-radius: 50%;
+    display: inline-block; vertical-align: -3px; margin-right: 8px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; left: 16px; right: 16px; bottom: 20px; max-width: 608px;
+    margin: 0 auto; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px;
+    font-size: 14px; box-shadow: 0 10px 34px rgba(0,0,0,.35);
+    transform: translateY(140%); transition: transform .22s ease; z-index: 50;
+  }
+  .toast.show { transform: translateY(0); }
+  .toast.bad { border-color: #f87171; }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 4px; }
+  .tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; padding: 8px 12px; font-size: 14px; width: auto; }
+  .tabs button.on { color: var(--ink); border-color: var(--border); background: var(--surface); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Web<span>Machine</span></div>
+    <div class="free-pill" id="freePill">&nbsp;</div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button data-tab="builds" class="on">Builds</button>
+    <button data-tab="new">New build</button>
+    <button data-tab="store">Pricing</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  var state = null;
+  var tab = 'builds';
+  var busy = false;
+
+  var view = document.getElementById('view');
+  var toastEl = document.getElementById('toast');
+  var freePill = document.getElementById('freePill');
+
+  /* ---- helpers ------------------------------------------------------- */
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  var toastTimer = null;
+  function toast(msg, bad) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast show' + (bad ? ' bad' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.className = 'toast'; }, 4200);
+  }
+
+  function haptic(type) {
+    try { tg.HapticFeedback.notificationOccurred(type); } catch (e) {}
+  }
+
+  function bytesFmt(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  /**
+   * Every request carries initData in a header. The server verifies its HMAC,
+   * so there is no separate login and no token to store.
+   */
+  function api(path, body, method) {
+    var opts = {
+      method: method || (body ? 'POST' : 'GET'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Telegram-Init-Data': (tg && tg.initData) || ''
+      }
+    };
+    if (body) opts.body = JSON.stringify(body);
+
+    return fetch('/api' + path, opts).then(function (res) {
+      return res.json().catch(function () { return { ok: false, error: { message: 'Bad response' } }; });
+    }).then(function (json) {
+      if (!json.ok) {
+        var err = new Error((json.error && json.error.message) || 'Request failed');
+        err.payload = json;
+        throw err;
+      }
+      return json.data;
+    });
+  }
+
+  /* ---- render -------------------------------------------------------- */
+
+  function render() {
+    if (!state) { view.innerHTML = '<div class="empty"><p>Loading…</p></div>'; return; }
+
+    var o = state.owner;
+    freePill.textContent = o.freeBuildsLeft > 0
+      ? o.freeBuildsLeft + ' free build left'
+      : o.buildsTotal + ' build' + (o.buildsTotal === 1 ? '' : 's');
+
+    if (state.paused) {
+      view.innerHTML = '<div class="card"><h3 class="card-title">Builds are paused</h3>'
+        + '<p class="card-sub">Capacity is maxed out for today. Try again in a few hours.</p></div>';
+      return;
+    }
+
+    if (tab === 'builds') return renderBuilds();
+    if (tab === 'new') return renderIntake();
+    return renderStore();
+  }
+
+  function renderBuilds() {
+    var builds = state.builds || [];
+
+    if (!builds.length) {
+      view.innerHTML =
+        '<div class="empty">'
+        + '<p>No builds yet. Your first homepage is free.</p>'
+        + '<button id="goNew">Start a build</button>'
+        + '</div>';
+      document.getElementById('goNew').onclick = function () { setTab('new'); };
+      return;
+    }
+
+    view.innerHTML = builds.map(function (b) {
+      var pages = (b.pages || []).filter(function (p) { return /\.html$/.test(p); });
+      return '<div class="card">'
+        + '<div class="card-head">'
+        + '<div><h3 class="card-title">' + esc(b.businessName || b.name) + '</h3>'
+        + '<p class="card-sub">' + esc(b.name) + ' · ' + pages.length + ' page'
+        + (pages.length === 1 ? '' : 's') + '</p></div>'
+        + '<span class="status ' + esc(b.status) + '">' + esc(b.status) + '</span>'
+        + '</div>'
+        + (b.status === 'ready'
+            ? '<div class="btn-row">'
+              + (b.previewUrl ? '<button class="ghost sm" data-preview="' + esc(b.previewUrl) + '">Preview</button>' : '')
+              + (b.downloadUrl ? '<button class="sm" data-download="' + esc(b.downloadUrl) + '">Download .zip</button>' : '')
+              + '</div>'
+            : '')
+        + (b.error ? '<p class="meta">' + esc(b.error) + '</p>' : '')
+        + '<p class="meta">' + bytesFmt(b.bytes) + ' · ' + esc(b.createdAt.slice(0, 10))
+        + (b.starsSpent ? ' · ' + b.starsSpent + ' ⭐' : ' · free') + '</p>'
+        + '</div>';
+    }).join('');
+
+    // openLink hands the URL to the system browser, which is what we want for
+    // both: a preview should render as a real page, and a download should go
+    // through the browser's own download handling.
+    Array.prototype.forEach.call(view.querySelectorAll('[data-preview]'), function (el) {
+      el.onclick = function () { openOut(el.getAttribute('data-preview')); };
+    });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-download]'), function (el) {
+      el.onclick = function () { openOut(el.getAttribute('data-download')); };
+    });
+  }
+
+  function openOut(url) {
+    if (tg && tg.openLink) tg.openLink(url);
+    else window.open(url, '_blank');
+  }
+
+  function renderIntake() {
+    var saved = readDraft();
+    view.innerHTML =
+      '<div class="card">'
+      + '<h3 class="card-title">Tell me about the business</h3>'
+      + '<p class="card-sub">Four answers. The more specific, the better the copy.</p>'
+      + '<label>Business name and what it does'
+      + '<input id="f-business" maxlength="600" placeholder="Ridgeline Plumbing, emergency callouts in Denver" value="' + esc(saved.business) + '"></label>'
+      + '<label>What it sells <span>include the price if there is one</span>'
+      + '<input id="f-offer" maxlength="600" placeholder="$149 drain clearing, same day" value="' + esc(saved.offer) + '"></label>'
+      + '<label>Who buys it <span>be specific</span>'
+      + '<input id="f-audience" maxlength="600" placeholder="Homeowners 35-60 with an urgent blockage" value="' + esc(saved.audience) + '"></label>'
+      + '<label>Style <span>optional</span>'
+      + '<input id="f-style" maxlength="200" placeholder="Clean and trustworthy, not flashy" value="' + esc(saved.style) + '"></label>'
+      + '</div>'
+      + '<h2>Pick what to build</h2>'
+      + (state.catalog || []).map(productCard).join('');
+
+    Array.prototype.forEach.call(view.querySelectorAll('[data-buy]'), function (el) {
+      el.onclick = function () { buy(el.getAttribute('data-buy'), el); };
+    });
+    ['business', 'offer', 'audience', 'style'].forEach(function (k) {
+      var el = document.getElementById('f-' + k);
+      if (el) el.oninput = saveDraft;
+    });
+  }
+
+  function productCard(p) {
+    var free = p.free;
+    var left = state.owner.freeBuildsLeft;
+    var disabled = free && left <= 0;
+
+    return '<div class="card">'
+      + '<div class="card-head">'
+      + '<div><h3 class="card-title">' + esc(p.name) + '</h3>'
+      + '<p class="card-sub">' + esc(p.tagline) + '</p></div>'
+      + '<div class="card-price">' + (free ? 'Free' : p.starCost + ' ⭐')
+      + '<small>' + esc(p.usdApprox) + '</small></div>'
+      + '</div>'
+      + '<ul class="includes">' + (p.includes || []).map(function (i) {
+          return '<li>' + esc(i) + '</li>';
+        }).join('') + '</ul>'
+      + '<div class="btn-row"><button data-buy="' + esc(p.productId) + '"'
+      + (disabled ? ' disabled' : '') + '>'
+      + (disabled ? 'Free build used today' : (free ? 'Build it free' : 'Build for ' + p.starCost + ' ⭐'))
+      + '</button></div>'
+      + '</div>';
+  }
+
+  function renderStore() {
+    view.innerHTML =
+      (state.catalog || []).map(function (p) {
+        return '<div class="card">'
+          + '<div class="card-head">'
+          + '<div><h3 class="card-title">' + esc(p.name) + '</h3>'
+          + '<p class="card-sub">' + esc(p.description) + '</p></div>'
+          + '<div class="card-price">' + (p.free ? 'Free' : p.starCost + ' ⭐')
+          + '<small>' + esc(p.usdApprox) + '</small></div>'
+          + '</div>'
+          + '<ul class="includes">' + (p.includes || []).map(function (i) {
+              return '<li>' + esc(i) + '</li>';
+            }).join('') + '</ul>'
+          + '</div>';
+      }).join('')
+      + '<div class="card"><p class="card-sub">Payment is Telegram Stars only. Buying from '
+      + 'Telegram Desktop or Web gives you more value than in-app, because the mobile '
+      + 'app stores take a cut.</p>'
+      + '<p class="card-sub" style="margin-top:10px">If a build fails, your Stars are '
+      + 'refunded automatically. You never have to ask.</p></div>';
+  }
+
+  /* ---- draft persistence ---------------------------------------------- */
+
+  /**
+   * The intake draft is a per-viewer convenience, so browser storage is the
+   * right home for it. Every access is guarded: a Mini App webview can have
+   * storage blocked entirely, and a throw here would blank the screen.
+   */
+  function readDraft() {
+    var empty = { business: '', offer: '', audience: '', style: '' };
+    try {
+      var raw = localStorage.getItem('wm_draft');
+      if (!raw) return empty;
+      var parsed = JSON.parse(raw);
+      return {
+        business: parsed.business || '', offer: parsed.offer || '',
+        audience: parsed.audience || '', style: parsed.style || ''
+      };
+    } catch (e) { return empty; }
+  }
+
+  function currentInputs() {
+    function val(id) {
+      var el = document.getElementById(id);
+      return el ? el.value.trim() : '';
+    }
+    return {
+      business: val('f-business'), offer: val('f-offer'),
+      audience: val('f-audience'), style: val('f-style')
+    };
+  }
+
+  function saveDraft() {
+    try { localStorage.setItem('wm_draft', JSON.stringify(currentInputs())); } catch (e) {}
+  }
+
+  /* ---- actions -------------------------------------------------------- */
+
+  function buy(productId, btn) {
+    if (busy) return;
+
+    var inputs = currentInputs();
+    if (!inputs.business) { toast('Tell me the business name first.', true); return; }
+    if (!inputs.offer) { toast('Tell me what it sells.', true); return; }
+
+    var product = (state.catalog || []).filter(function (p) {
+      return p.productId === productId;
+    })[0];
+    if (!product) return;
+
+    busy = true;
+    var label = btn.innerHTML;
+    btn.disabled = true;
+
+    if (product.free) {
+      // A build is several Claude calls deep, so the wait is about a minute.
+      // The label cycles so the button never looks frozen.
+      var stages = ['Planning the design', 'Writing the pages', 'Designing the style', 'Assembling'];
+      var i = 0;
+      btn.innerHTML = '<span class="spinner"></span>' + stages[0] + '…';
+      var ticker = setInterval(function () {
+        i = Math.min(i + 1, stages.length - 1);
+        btn.innerHTML = '<span class="spinner"></span>' + stages[i] + '…';
+      }, 16000);
+
+      api('/build', { productId: productId, inputs: inputs })
+        .then(function (data) {
+          clearInterval(ticker);
+          haptic('success');
+          toast(data.build.businessName + ' is ready.');
+          return refresh().then(function () { setTab('builds'); });
+        })
+        .catch(function (err) {
+          clearInterval(ticker);
+          haptic('error');
+          toast(err.message, true);
+        })
+        .then(function () {
+          busy = false;
+          btn.disabled = false;
+          btn.innerHTML = label;
+        });
+      return;
+    }
+
+    api('/invoice', { productId: productId, inputs: inputs })
+      .then(function (data) {
+        busy = false;
+        btn.disabled = false;
+        btn.innerHTML = label;
+
+        if (!tg || !tg.openInvoice) {
+          openOut(data.invoiceLink);
+          return;
+        }
+
+        tg.openInvoice(data.invoiceLink, function (status) {
+          if (status === 'paid') {
+            toast('Paid. The bot is building it now and will send the files.');
+            haptic('success');
+            // The build runs in the payment webhook, so the result arrives in
+            // the chat. Poll once the generation has had time to finish.
+            setTimeout(function () { refresh().then(function () { setTab('builds'); }); }, 70000);
+          } else if (status === 'failed') {
+            toast('Payment failed.', true);
+          }
+        });
+      })
+      .catch(function (err) {
+        busy = false;
+        btn.disabled = false;
+        btn.innerHTML = label;
+        haptic('error');
+        toast(err.message, true);
+      });
+  }
+
+  function refresh() {
+    return api('/state').then(function (data) {
+      state = data;
+      render();
+    }).catch(function (err) {
+      view.innerHTML = '<div class="empty"><p>' + esc(err.message) + '</p>'
+        + '<button id="retry">Try again</button></div>';
+      var r = document.getElementById('retry');
+      if (r) r.onclick = function () { refresh(); };
+    });
+  }
+
+  function setTab(next) {
+    tab = next;
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+      b.className = b.getAttribute('data-tab') === next ? 'on' : '';
+    });
+    render();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+    b.onclick = function () { setTab(b.getAttribute('data-tab')); };
+  });
+
+  refresh();
+})();
+</script>
+</body>
+</html>
