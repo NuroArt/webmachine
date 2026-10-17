@@ -29,28 +29,120 @@ cannot build anything.
 
 ---
 
-## 3. Add the database
+## 3. Add the database: MongoDB Atlas
 
-**Option A, one click:** in the project, **+ New** → **Database** → **MongoDB**.
+Atlas is MongoDB's own hosted service. The M0 tier is free with no time limit,
+and because it lives outside Railway it survives a host change, a redeploy, or
+moving the app somewhere else entirely.
 
-Then on the WebMachine service, Variables → add:
+### 3a. Create the cluster
+
+1. **mongodb.com** → sign up → Atlas
+2. Create a deployment → **M0** (the free one)
+3. Provider **AWS**, region **us-east-1**
+
+> Pick the region closest to where Railway runs your service. Railway shows it
+> under Settings → Region. Every query crosses that gap, so a mismatched pair
+> adds latency to every single request.
+
+### 3b. Create a database user
+
+Atlas prompts for this during cluster creation, or Database Access → Add New
+Database User.
+
+- Authentication: **Password**
+- Privileges: **Read and write to any database**
+
+⚠️ **Use an alphanumeric password.** Atlas will happily generate one
+containing `@`, `/`, `#` or `?`, and every one of those characters has a
+meaning inside a connection URI. A `@` in the password splits the URI at the
+wrong place and you get an authentication error that looks like a wrong
+password. If you keep a generated password, percent-encode it: `@` is `%40`,
+`#` is `%23`, `/` is `%2F`, `:` is `%3A`.
+
+### 3c. Open network access
+
+Network Access → Add IP Address → **Allow access from anywhere**
+(`0.0.0.0/0`).
+
+This is required, not laziness. Railway does not give you a static outbound IP
+on the hobby plan, so there is no single address to allowlist. The connection
+is still authenticated and TLS encrypted, and M0 does not support private
+networking. Treat the connection string as the credential it is.
+
+### 3d. Build the connection string
+
+Connect → **Drivers** → Node.js. You get:
 
 ```
-MONGODB_URI = ${{MongoDB.MONGO_URL}}
+mongodb+srv://wmuser:<db_password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
 ```
 
-That is a Railway variable reference, not a literal. Check the Mongo service's
-own Variables tab for the exact name it exposes and match it. Railway injects
-the real value at deploy time and rotates it with the database.
+Two edits before it works:
 
-**Option B, free forever:** a MongoDB Atlas M0 cluster. Five minutes of setup
-(create cluster, add a database user, allow `0.0.0.0/0` in Network Access) and
-it costs nothing and survives any host migration. Paste its connection string
-into `MONGODB_URI` directly.
+```
+mongodb+srv://wmuser:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/webmachine?retryWrites=true&w=majority
+                     ^^^^^^^^^^^^^                                      ^^^^^^^^^^^
+                     real password                                      database name
+```
 
-Atlas is the better long-term home. Railway Mongo is the faster start.
+⚠️ **The database name is the edit people miss.** Atlas hands you the string
+with nothing between the host and the `?`. Connect with it as-is and Mongoose
+silently uses a database called `test`. Everything appears to work, and then
+one day you look for your collections and they are in the wrong place. Insert
+`/webmachine` before the `?`.
 
----
+### 3e. Prove it works before Railway sees it
+
+Put the string in your local `.env` and run:
+
+```bash
+npm run db:check
+```
+
+It parses the URI, names anything missing, then actually connects:
+
+```
+  database          webmachine
+  connect           41 ms
+  ping              22 ms
+  collections       (none yet)
+
+  Safe to paste this into Railway as MONGODB_URI.
+```
+
+If it fails it tells you which of the three things to go and change, rather
+than handing you a driver stack trace. Twenty seconds here beats debugging a
+silent Railway deploy.
+
+### 3f. Put it in Railway
+
+WebMachine service → Variables:
+
+```
+MONGODB_URI = mongodb+srv://wmuser:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/webmachine?retryWrites=true&w=majority
+```
+
+A literal value this time, not a Railway reference. Railway's own MongoDB
+plugin is the one-click alternative and uses `${{MongoDB.MONGO_URL}}`, but it
+bills against your plan and disappears with the project.
+
+### What M0 gives you
+
+512 MB of storage, shared CPU, 500 concurrent connections. The app opens a
+pool of up to 20, set in `src/db/connect.js`.
+
+Storage is the limit worth watching, because generated HTML lives in the
+`sites` collection. A five-page build runs roughly 80 KB, since the stylesheet
+is inlined into each page. That is about **6,000 builds** before M0 fills, and
+the inlining is why: the CSS is stored five times per build rather than once.
+
+That was the right trade for the buyer. A single `.html` opened straight out of
+the download renders correctly, which removes an entire class of support
+request. The cost is storage you have plenty of.
+
+When it eventually matters, the fix is to prune the `files` array on old free
+builds rather than to stop inlining.
 
 ## 4. Set the rest of the variables
 
@@ -120,12 +212,22 @@ Telegram Stars needs no setup: no provider token, nothing to enable.
 curl https://your-domain.up.railway.app/health
 ```
 
+(`npm run db:check` covers the database half of this locally, against the same
+connection string Railway is using.)
+
 ```json
 { "ok": true, "db": "connected", "paused": false, "spendToday": 0 }
 ```
 
-`db: connected` is the one that matters. If it says `disconnected`, the
-`MONGODB_URI` reference is wrong.
+`db: connected` is the one that matters. If it says `disconnected`, work
+through these in order, because they cover almost every case:
+
+| Symptom in the Railway logs | Cause |
+|---|---|
+| `Authentication failed` | password wrong, or it contains a character that needs percent-encoding |
+| `ECONNREFUSED` or a server-selection timeout | `0.0.0.0/0` is not in Atlas Network Access |
+| Connects fine but collections are missing | no `/webmachine` in the URI, so you are writing to `test` |
+| `querySrv ENOTFOUND` | the `mongodb+srv://` host is mistyped |
 
 ---
 

@@ -63,7 +63,7 @@ cp .env.example .env
 
 | Variable | Where it comes from |
 |---|---|
-| `MONGODB_URI` | MongoDB Atlas, or Railway's Mongo plugin |
+| `MONGODB_URI` | MongoDB Atlas M0, free. See `DEPLOY.md` step 3 |
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys |
 | `TELEGRAM_BOT_TOKEN` | @BotFather → `/newbot` |
 | `TELEGRAM_WEBHOOK_SECRET` | invent one: `openssl rand -hex 32` |
@@ -74,6 +74,7 @@ cp .env.example .env
 ### 3. Verify before deploying
 
 ```bash
+npm run db:check   # validates MONGODB_URI and actually connects
 npm run check      # every module parses and its requires resolve
 npm test           # 44 unit tests, no network, no database
 npm run test:e2e   # 41 end-to-end tests against in-memory MongoDB

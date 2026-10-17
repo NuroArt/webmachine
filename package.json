@@ -4,7 +4,9 @@
   "description": "WebMachine - Telegram bot + Mini App that generates real multi-page websites and sales funnels with Claude, paid for in Telegram Stars.",
   "main": "src/index.js",
   "type": "commonjs",
-  "engines": { "node": ">=20.0.0" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
@@ -12,7 +14,8 @@
     "check": "node scripts/syntaxCheck.js",
     "test": "node scripts/selfTest.js",
     "test:e2e": "node scripts/e2eTest.js",
-    "test:all": "npm run check && npm test && npm run test:e2e"
+    "test:all": "npm run check && npm test && npm run test:e2e",
+    "db:check": "node scripts/dbCheck.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
