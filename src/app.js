@@ -93,6 +93,12 @@ function createApp() {
       version: require('../package.json').version,
       spendToday: Number(spendToday().toFixed(4)),
       paused: budgetExceeded(),
+      // The bot id is public (it is in every t.me link). It is here so a
+      // Mini App auth failure can be diagnosed from outside the box: if this
+      // does not match the bot you opened, the service holds another bot's
+      // token and no amount of initData debugging will help.
+      botId: config.telegram.botId,
+      miniAppUrl: config.telegram.miniAppUrl || null,
     });
   });
 
