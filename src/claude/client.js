@@ -84,9 +84,30 @@ async function complete({ system, messages, maxTokens, temperature = 0.7, prefil
       messages: finalMessages,
     });
   } catch (err) {
-    logger.error({ err: err.message, status: err.status, label }, 'Claude API call failed');
+    // err.message is the whole JSON body, which log viewers truncate at
+    // exactly the point the reason appears. Pull the API's own sentence out
+    // and log it as its own short field.
+    const apiMessage =
+      err?.error?.error?.message ||
+      (() => {
+        const m = String(err?.message || '').match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        return m ? m[1] : null;
+      })() ||
+      String(err?.message || '').slice(0, 300);
+
+    logger.error(
+      {
+        apiMessage,
+        model: config.anthropic.model,
+        maxTokens: maxTokens || config.anthropic.maxTokens,
+        status: err.status,
+        label,
+      },
+      'Claude API call failed'
+    );
+
     if (err.status === 429) throw Errors.rateLimited('Claude is rate limited. Try again shortly.');
-    throw Errors.upstream(`Claude API error: ${err.message}`);
+    throw Errors.upstream(`Claude API error: ${apiMessage}`);
   }
 
   const text = (response.content || [])
