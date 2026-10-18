@@ -98,6 +98,10 @@ function createApp() {
       // does not match the bot you opened, the service holds another bot's
       // token and no amount of initData debugging will help.
       botId: config.telegram.botId,
+      // The model the running service will actually send. A deploy that did
+      // not land, or a variable still overriding the default, is otherwise
+      // indistinguishable from a code bug.
+      model: config.anthropic.model,
       miniAppUrl: config.telegram.miniAppUrl || null,
     });
   });
