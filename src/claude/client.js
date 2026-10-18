@@ -77,12 +77,12 @@ function resetSpend() {
  * @param {string}   opts.system
  * @param {Array}    opts.messages
  * @param {number}  [opts.maxTokens]
- * @param {number}  [opts.temperature]
+ * @param {number}  [opts.temperature] Ignored. Current models reject it.
  * @param {string}  [opts.prefill]   Assistant prefill to force a shape (e.g. '{')
  * @param {string}  [opts.label]     For logs only
  * @returns {Promise<{text,usage,model,stopReason,truncated,ms,costUsd}>}
  */
-async function complete({ system, messages, maxTokens, temperature = 0.7, prefill, label }) {
+async function complete({ system, messages, maxTokens, prefill, label }) {
   const started = Date.now();
   const anthropic = getClient();
 
@@ -93,7 +93,9 @@ async function complete({ system, messages, maxTokens, temperature = 0.7, prefil
     response = await anthropic.messages.create({
       model: config.anthropic.model,
       max_tokens: maxTokens || config.anthropic.maxTokens,
-      temperature,
+      // No `temperature`. Current models reject it outright with a 400, and
+      // callers that still pass one are ignored rather than broken: the
+      // variation it used to buy is not worth failing every build for.
       system,
       messages: finalMessages,
     });
