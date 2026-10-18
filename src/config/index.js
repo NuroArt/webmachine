@@ -49,7 +49,9 @@ const config = {
 
   anthropic: {
     apiKey: secret('ANTHROPIC_API_KEY'),
-    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
+    // A wrong model id fails as a 400 on the first call of every build, after
+    // the buyer has already paid. Keep this pointed at a model that exists.
+    model: secret('CLAUDE_MODEL') || 'claude-sonnet-5-5',
     maxTokens: num('CLAUDE_MAX_TOKENS', 8000),
   },
 
