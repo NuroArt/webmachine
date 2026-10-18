@@ -14,7 +14,7 @@ const { globalLimiter } = require('./middleware/rateLimit');
 const { notFoundHandler, errorHandler } = require('./middleware/error');
 const { ok, SCHEMAS } = require('./utils/schemas');
 const { publicCatalog } = require('./catalog/products');
-const { spendToday, budgetExceeded } = require('./claude/client');
+const { spendToday, budgetExceeded, getLastApiError } = require('./claude/client');
 
 const apiRoutes = require('./routes/api');
 const webhookRoutes = require('./routes/webhook');
@@ -102,6 +102,7 @@ function createApp() {
       // not land, or a variable still overriding the default, is otherwise
       // indistinguishable from a code bug.
       model: config.anthropic.model,
+      lastApiError: getLastApiError(),
       miniAppUrl: config.telegram.miniAppUrl || null,
     });
   });

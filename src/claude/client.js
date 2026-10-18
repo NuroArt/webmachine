@@ -40,6 +40,20 @@ function recordSpend(usage = {}) {
   return cost;
 }
 
+/**
+ * The last Claude API failure, for /health.
+ *
+ * A generation error reaches the buyer as one sentence on a screen and is
+ * otherwise only in the logs, where the JSON body gets truncated at exactly
+ * the interesting part. Keeping the last one here makes it readable from
+ * outside the box. It holds the API's own message, never a request or a key.
+ */
+let lastApiError = null;
+
+function getLastApiError() {
+  return lastApiError;
+}
+
 function spendToday() {
   const today = new Date().toDateString();
   if (spend.day !== today) return 0;
@@ -94,6 +108,14 @@ async function complete({ system, messages, maxTokens, temperature = 0.7, prefil
         return m ? m[1] : null;
       })() ||
       String(err?.message || '').slice(0, 300);
+
+    lastApiError = {
+      at: new Date().toISOString(),
+      status: err.status || null,
+      label: label || null,
+      model: config.anthropic.model,
+      message: String(apiMessage).slice(0, 400),
+    };
 
     logger.error(
       {
@@ -229,6 +251,7 @@ module.exports = {
   extractHtml,
   extractCss,
   spendToday,
+  getLastApiError,
   budgetExceeded,
   resetSpend,
 };
