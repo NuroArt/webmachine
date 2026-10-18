@@ -78,7 +78,9 @@ function resetSpend() {
  * @param {Array}    opts.messages
  * @param {number}  [opts.maxTokens]
  * @param {number}  [opts.temperature] Ignored. Current models reject it.
- * @param {string}  [opts.prefill]   Assistant prefill to force a shape (e.g. '{')
+ * @param {string}  [opts.prefill]   Shape to force (e.g. '{'). Current models
+ *                                    reject an assistant prefill turn, so this
+ *                                    is applied as a system instruction.
  * @param {string}  [opts.label]     For logs only
  * @returns {Promise<{text,usage,model,stopReason,truncated,ms,costUsd}>}
  */
@@ -86,7 +88,20 @@ async function complete({ system, messages, maxTokens, prefill, label }) {
   const started = Date.now();
   const anthropic = getClient();
 
-  const finalMessages = prefill ? [...messages, { role: 'assistant', content: prefill }] : messages;
+  /**
+   * Prefill used to be an assistant turn ending in '{', which guaranteed the
+   * reply opened as JSON. Current models reject that outright: "This model
+   * does not support assistant message prefill."
+   *
+   * The same guarantee now comes from the system prompt, and `extractJson`
+   * still pulls the first balanced object out of whatever comes back, so a
+   * model that adds a sentence of preamble costs nothing.
+   */
+  const finalSystem = prefill
+    ? `${system}\n\nReply with the raw ${prefill === '{' ? 'JSON object' : 'content'} and nothing else. No preamble, no explanation, no code fences.`
+    : system;
+
+  const finalMessages = messages;
 
   let response;
   try {
@@ -96,7 +111,7 @@ async function complete({ system, messages, maxTokens, prefill, label }) {
       // No `temperature`. Current models reject it outright with a 400, and
       // callers that still pass one are ignored rather than broken: the
       // variation it used to buy is not worth failing every build for.
-      system,
+      system: finalSystem,
       messages: finalMessages,
     });
   } catch (err) {
@@ -150,8 +165,8 @@ async function complete({ system, messages, maxTokens, prefill, label }) {
   if (truncated) logger.warn({ label }, 'Claude response hit max_tokens and was truncated');
 
   return {
-    // Re-attach the prefill so callers parsing JSON get a complete document.
-    text: prefill ? prefill + text : text,
+    // Nothing to re-attach: the model now writes the opening brace itself.
+    text,
     usage: response.usage || {},
     model: response.model,
     stopReason: response.stop_reason,
