@@ -2,7 +2,8 @@
 
 const express = require('express');
 
-const { telegramAuth } = require('../telegram/auth');
+const config = require('../config');
+const { telegramAuth, verifyInitData } = require('../telegram/auth');
 const { readLimiter, actionLimiter, buildLimiter } = require('../middleware/rateLimit');
 const { ok } = require('../utils/schemas');
 const { Errors } = require('../utils/errors');
@@ -27,6 +28,60 @@ router.get(
   readLimiter,
   asyncRoute(async (req, res) => {
     res.json(ok('catalog', { catalog: publicCatalog(), paused: budgetExceeded() }));
+  })
+);
+
+/**
+ * Unauthenticated self-diagnosis for Mini App auth.
+ *
+ * When initData fails, the failure is invisible from the outside: the service
+ * is healthy, the token looks right, and the only symptom is one error
+ * string. This reports what the server actually received and where the check
+ * broke, so the difference between "no initData at all" (opened outside
+ * Telegram), "signed by another bot" and "expired" is one request away.
+ *
+ * It reveals nothing secret. Every field described here was supplied by the
+ * caller, and the verdict is a single boolean, never a computed hash, which
+ * would turn this into a signing oracle.
+ */
+router.get(
+  '/whoami',
+  readLimiter,
+  asyncRoute(async (req, res) => {
+    const raw = req.get('X-Telegram-Init-Data') || '';
+    const report = {
+      botId: config.telegram.botId,
+      received: Boolean(raw),
+      length: raw.length,
+      fields: [],
+      hasHash: false,
+      hasUser: false,
+      authDateAgeSeconds: null,
+      verdict: 'no initData received',
+    };
+
+    if (raw) {
+      const params = new URLSearchParams(raw);
+      report.fields = [...params.keys()].sort();
+      report.hasHash = params.has('hash');
+      report.hasUser = params.has('user');
+
+      const authDate = Number(params.get('auth_date'));
+      if (Number.isFinite(authDate) && authDate > 0) {
+        report.authDateAgeSeconds = Math.round(Date.now() / 1000 - authDate);
+      }
+
+      try {
+        const verified = verifyInitData(raw);
+        report.verdict = 'valid';
+        report.userId = verified.user.id;
+        report.username = verified.user.username;
+      } catch (err) {
+        report.verdict = err.message || 'verification failed';
+      }
+    }
+
+    res.json(ok('whoami', report));
   })
 );
 

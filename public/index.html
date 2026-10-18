@@ -470,9 +470,29 @@
       render();
     }).catch(function (err) {
       view.innerHTML = '<div class="empty"><p>' + esc(err.message) + '</p>'
-        + '<button id="retry">Try again</button></div>';
+        + '<button id="retry">Try again</button>'
+        + '<pre id="diag" style="text-align:left;font-size:11px;opacity:.65;'
+        + 'white-space:pre-wrap;margin-top:14px"></pre></div>';
       var r = document.getElementById('retry');
       if (r) r.onclick = function () { refresh(); };
+
+      // An auth failure is invisible without this. Report what the client
+      // holds and what the server made of it, side by side.
+      var diag = document.getElementById('diag');
+      if (!diag) return;
+      var local = 'client initData: '
+        + (tg ? (tg.initData ? tg.initData.length + ' chars' : 'EMPTY') : 'no Telegram.WebApp')
+        + '\nplatform: ' + (tg && tg.platform ? tg.platform : 'none')
+        + '\nversion: ' + (tg && tg.version ? tg.version : 'none');
+      diag.textContent = local + '\nserver: checking...';
+      api('/whoami').then(function (d) {
+        diag.textContent = local + '\n\nserver verdict: ' + d.verdict
+          + '\nbotId: ' + d.botId
+          + '\nfields: ' + (d.fields.join(', ') || 'none')
+          + '\nauth_date age: ' + d.authDateAgeSeconds + 's';
+      }).catch(function (e) {
+        diag.textContent = local + '\nserver: ' + e.message;
+      });
     });
   }
 
