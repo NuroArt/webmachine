@@ -353,6 +353,51 @@ test('tampered initData is rejected', () => {
   assert.throws(() => verifyInitData(params.toString()), /invalid|signature/i);
 });
 
+/**
+ * Telegram Web 9.6 sends `signature` and counts it in the data-check-string;
+ * other clients leave it out. Both must verify, or one platform silently
+ * fails auth with nothing to show for it but a bad hash.
+ */
+test('initData verifies with signature inside the data-check-string', () => {
+  const initData = signInitData(
+    {
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'AAEtest',
+      signature: 'ed25519-placeholder',
+      user: JSON.stringify({ id: 42, username: 'jon' }),
+    },
+    TOKEN
+  );
+  assert.strictEqual(verifyInitData(initData).user.id, '42');
+});
+
+test('initData verifies with signature excluded from the data-check-string', () => {
+  // Sign without `signature`, then add it back unsigned: the older reading.
+  const base = {
+    auth_date: String(Math.floor(Date.now() / 1000)),
+    query_id: 'AAEtest',
+    user: JSON.stringify({ id: 42, username: 'jon' }),
+  };
+  const signed = new URLSearchParams(signInitData(base, TOKEN));
+  signed.set('signature', 'ed25519-placeholder');
+  assert.strictEqual(verifyInitData(signed.toString()).user.id, '42');
+});
+
+test('a forged user is still rejected when signature is present', () => {
+  const signed = new URLSearchParams(
+    signInitData(
+      {
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        signature: 'ed25519-placeholder',
+        user: JSON.stringify({ id: 42 }),
+      },
+      TOKEN
+    )
+  );
+  signed.set('user', JSON.stringify({ id: 9999 }));
+  assert.throws(() => verifyInitData(signed.toString()), /invalid|signature/i);
+});
+
 test('initData signed with the wrong bot token is rejected', () => {
   const initData = signInitData(
     {

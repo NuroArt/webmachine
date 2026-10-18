@@ -27,30 +27,52 @@ function verifyInitData(initData) {
   if (!hash) throw Errors.unauthorized('initData has no hash');
 
   params.delete('hash');
-  // `signature` is Telegram's newer Ed25519 field and is excluded from the
-  // legacy HMAC check.
-  params.delete('signature');
 
-  const dataCheckString = [...params.entries()]
-    .map(([k, v]) => [k, v])
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
+  /**
+   * Builds the data-check-string: every remaining field, sorted by key,
+   * joined as "key=value" with newlines.
+   */
+  const checkString = (entries) =>
+    entries
+      .slice()
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+  const entries = [...params.entries()];
 
   const secretKey = crypto
     .createHmac('sha256', 'WebAppData')
     .update(config.telegram.botToken)
     .digest();
 
-  const computed = crypto
-    .createHmac('sha256', secretKey)
-    .update(dataCheckString)
-    .digest('hex');
+  const sign = (s) => crypto.createHmac('sha256', secretKey).update(s).digest('hex');
 
-  // Constant-time compare; length mismatch is itself a failure.
-  const a = Buffer.from(computed, 'utf8');
-  const b = Buffer.from(hash, 'utf8');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  /**
+   * Clients disagree about `signature`.
+   *
+   * Telegram added it in Bot API 7.10 for third-party Ed25519 validation.
+   * Some clients leave it out of the HMAC data-check-string and some put it
+   * in: Telegram Web 9.6 includes it, which makes a payload that is correct
+   * by one reading fail by the other, with no symptom but a bad hash.
+   *
+   * Both candidates are HMACs over caller-supplied data keyed by the bot
+   * token, so accepting either tolerates the ambiguity without weakening
+   * anything. Forging either still requires the token.
+   */
+  const candidates = [checkString(entries)];
+  if (params.has('signature')) {
+    candidates.push(checkString(entries.filter(([k]) => k !== 'signature')));
+  }
+
+  const expected = Buffer.from(hash, 'utf8');
+  const matched = candidates.some((s) => {
+    const computed = Buffer.from(sign(s), 'utf8');
+    // Constant-time compare; length mismatch is itself a failure.
+    return computed.length === expected.length && crypto.timingSafeEqual(computed, expected);
+  });
+
+  if (!matched) {
     throw Errors.unauthorized('initData signature is invalid');
   }
 
