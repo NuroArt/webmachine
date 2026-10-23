@@ -4,6 +4,7 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const { connectDb, disconnectDb } = require('./db/connect');
 const { createApp } = require('./app');
+const { startDiscord, stopDiscord } = require('./discord/client');
 
 async function main() {
   await connectDb();
@@ -27,6 +28,12 @@ async function main() {
   // free-build request off mid-generation.
   server.requestTimeout = 300_000;
 
+  // Discord comes up after HTTP, and never blocks it. Its replies link to the
+  // preview and download routes, so the server should already be serving them
+  // by the time the first interaction can arrive. A Discord failure is logged
+  // and swallowed inside startDiscord.
+  await startDiscord();
+
   // ---- Graceful shutdown ------------------------------------------------
   let shuttingDown = false;
 
@@ -43,6 +50,10 @@ async function main() {
 
     server.close(async () => {
       try {
+        // Close the Gateway before the database: an interaction still in
+        // flight will reach for Mongo, and a dead connection there surfaces to
+        // the user as a broken build rather than as a restart.
+        await stopDiscord();
         await disconnectDb();
         logger.info('Shutdown complete');
         process.exit(0);

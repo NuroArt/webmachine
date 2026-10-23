@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { PLATFORMS, DEFAULT_PLATFORM } = require('../utils/identity');
 
 /**
  * The capability slug. Unguessable, and it lives in the URL path rather than a
@@ -24,7 +25,9 @@ function newSlug() {
  */
 const SiteSchema = new Schema(
   {
+    /** Composite "<platform>:<rawId>" — see utils/identity.js. */
     userId: { type: String, required: true, index: true },
+    platform: { type: String, enum: PLATFORMS, default: DEFAULT_PLATFORM, index: true },
     productId: { type: String, required: true, index: true },
 
     slug: { type: String, required: true, unique: true, index: true, default: newSlug },
@@ -76,6 +79,7 @@ const SiteSchema = new Schema(
 );
 
 SiteSchema.index({ userId: 1, createdAt: -1 });
+SiteSchema.index({ platform: 1, createdAt: -1 });
 
 /* ---- file accessors ------------------------------------------------- */
 
@@ -112,6 +116,7 @@ SiteSchema.statics.toFileArray = function toFileArray(filesObject) {
 SiteSchema.methods.toPublic = function toPublic(urls = {}) {
   return {
     id: this._id.toString(),
+    platform: this.platform,
     productId: this.productId,
     name: this.name,
     businessName: this.businessName,

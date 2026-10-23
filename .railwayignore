@@ -1,0 +1,15 @@
+# Uploading node_modules is slow and pointless — the image runs `npm ci`.
+node_modules/
+
+# Never upload local secrets. Railway's own Variables are the source of
+# truth in production, and a .env inside the image would silently override
+# them at runtime.
+.env
+.env.*
+!.env.example
+
+*.log
+coverage/
+.cache/
+backups/
+.git/

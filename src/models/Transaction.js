@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { PLATFORMS, DEFAULT_PLATFORM } = require('../utils/identity');
 
 /**
  * Every Stars movement is recorded here. `telegramChargeId` is unique, which
@@ -10,7 +11,9 @@ const { Schema } = mongoose;
  */
 const TransactionSchema = new Schema(
   {
+    /** Composite "<platform>:<rawId>" — see utils/identity.js. */
     userId: { type: String, required: true, index: true },
+    platform: { type: String, enum: PLATFORMS, default: DEFAULT_PLATFORM, index: true },
 
     kind: {
       type: String,

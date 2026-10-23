@@ -18,6 +18,8 @@ const { spendToday, budgetExceeded, getLastApiError } = require('./claude/client
 
 const apiRoutes = require('./routes/api');
 const webhookRoutes = require('./routes/webhook');
+const legalRoutes = require('./routes/legal');
+const { getClient: getDiscordClient } = require('./discord/client');
 
 function createApp() {
   const app = express();
@@ -104,6 +106,16 @@ function createApp() {
       model: config.anthropic.model,
       lastApiError: getLastApiError(),
       miniAppUrl: config.telegram.miniAppUrl || null,
+      // Surfaced for the same reason as botId: the process stays up and HTTP
+      // stays green when the Gateway drops, so without this the only symptom
+      // of a dead Discord connection is slash commands timing out.
+      discord: config.discord.enabled
+        ? {
+            enabled: true,
+            ready: Boolean(getDiscordClient()?.isReady()),
+            guilds: getDiscordClient()?.guilds?.cache?.size ?? 0,
+          }
+        : { enabled: false },
     });
   });
 
@@ -112,6 +124,12 @@ function createApp() {
 
   // ---- Webhook (no global limiter: Telegram must never be throttled) -----
   app.use('/webhook', webhookRoutes);
+
+  // ---- Terms and privacy (public, unauthenticated) -----------------------
+  // Mounted before static so an index.html can never shadow them, and before
+  // the API so they are never subject to its rate limiter — Discord fetches
+  // these URLs during review.
+  app.use('/', legalRoutes);
 
   // ---- Previews and downloads (capability URLs, before the API) ----------
   app.use('/', apiRoutes.publicRouter);

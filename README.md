@@ -195,8 +195,119 @@ are paused.
 /pricing  what things cost
 /invite   referral link
 /refund   instant refund, no questions
+/forget   delete your builds and details
 /help     how this works
 ```
+
+---
+
+## FivePageBot — the Discord adapter
+
+Discord runs the **free tier only**. Checkout stays on Telegram, for three
+reasons that are properties of the platform rather than of this code:
+
+- Discord has no arbitrary-amount invoice. Prices are fixed SKUs configured in
+  the developer portal, so `PRICE_SITE_STARS` has no counterpart.
+- There is no bot-callable refund. `safeRefund` cannot exist there, and the
+  instant no-questions refund is what makes a stranger comfortable paying.
+- Monetization needs a verified app, a developer team, and $100 of earnings
+  before the first payout, limited to US/EU/UK teams.
+
+So Discord's job is acquisition and Telegram's is money. The free build's
+follow-up message links to the Telegram bot, which is the whole funnel.
+
+`WebMachine` is the repo. `FivePageBot` is the name users see, set by
+`BRAND_NAME` and read by every user-facing surface.
+
+### Deploy order — the migration goes FIRST
+
+```bash
+npm run migrate:platform:dry      # report, writes nothing
+npm run migrate:platform          # prefix every existing id with telegram:
+```
+
+**Run this before deploying.** User ids are now composite
+(`telegram:100001`), and until the existing rows are prefixed the Telegram bot
+normalizes `100001`, finds no row, and treats a returning user as brand new —
+fresh free-build quota, no build history, new referral code. Nothing errors.
+That is what makes it dangerous.
+
+Deploying first is recoverable but manual: returning users get a second row,
+and the migration then reports each collision instead of merging it, because
+reconciling two sets of counters and free-build windows is a judgement call.
+
+### Then set it up
+
+```bash
+# discord.com/developers → New Application → Bot → Reset Token
+# Application ID is on the General Information page.
+# Set DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID, TELEGRAM_BOT_USERNAME
+# and DISCORD_ENABLED=true in the environment.
+
+npm run register:discord:dev      # one test server, appears instantly
+npm run register:discord          # global, up to an hour to propagate
+```
+
+Registration is out of band and permanent — the running bot never registers
+its own commands, so a restart costs no rate limit.
+
+The invite URL is printed by the register script with `permissions=0`. The bot
+answers interactions and nothing else: it needs no channel permissions, and
+**no privileged intents**. Interaction responses are authorized by the
+interaction token, not by channel permissions, so it can reply with an embed
+and a `.zip` in a channel where it has none. It never reads message content,
+so there is no Message Content review to wait on.
+
+### Commands
+
+```
+/build    4-question modal, then about a minute → preview link + .zip
+/builds   your past builds
+/pricing  what the free build includes, and the Telegram prices
+/forget   delete your builds and details
+/help     how it works
+```
+
+The modal is a genuine improvement over the Telegram flow. Telegram asks four
+questions as four messages and has to persist half-finished intake on the user
+document to survive a redeploy; a modal arrives as one atomic submission, so
+there is no intake state to keep and nothing to lose mid-conversation.
+
+### What to watch
+
+`GET /health` reports `discord: { enabled, ready, guilds }`. The process stays
+up and HTTP stays green when the Gateway drops, so without that field the only
+symptom is slash commands timing out.
+
+A Discord login failure is logged and swallowed. Telegram, the previews and
+the downloads keep serving — taking the process down over Discord would be a
+self-inflicted outage for paying users.
+
+---
+
+## Terms, privacy and erasure
+
+`/terms` and `/privacy` are served by this same Express app, so Discord's
+Terms of Service URL and Privacy Policy URL fields have somewhere real to
+point with no second host to deploy.
+
+Set `LEGAL_ENTITY` and, optionally, `LEGAL_CONTACT_EMAIL`. Left blank, the
+pages say to contact you through the bot rather than publishing an address.
+
+The text in `src/routes/legal.js` is written from what the code actually
+stores — the fields on `User`, `Site` and `Transaction`, and what
+`service.deleteUserData` really erases. **If you change what is stored, change
+that page in the same commit.** Two e2e tests assert the policy's claims still
+hold, so a drift shows up as a failing test rather than as a false statement on
+a public page.
+
+`/forget` (both bots) calls `deleteUserData`, which is deliberately asymmetric:
+
+| | What happens | Why |
+|---|---|---|
+| Sites | Deleted outright | They hold the pages and the description typed in. Deleting kills the public preview URLs, which is the point. |
+| Transactions | Kept, `inputs` and `rawUpdate` nulled | The amount and charge id are financial records backing a refund the buyer may still be owed. |
+| User row | Kept, name fields cleared | Deleting it would reset the daily free-build counter, turning erasure into an unlimited-builds exploit. |
 
 ---
 

@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { PLATFORMS, DEFAULT_PLATFORM, rawIdOf } = require('../utils/identity');
 
 /**
  * A WebMachine owner. No game economy: this tracks identity, entitlement to
@@ -9,7 +10,16 @@ const { Schema } = mongoose;
  */
 const UserSchema = new Schema(
   {
+    /**
+     * Composite "<platform>:<rawId>" — see utils/identity.js. Still a single
+     * unique string, so the index and every existing query are unchanged;
+     * what changed is that a Telegram and a Discord user with the same
+     * numeric id no longer land on the same row.
+     */
     userId: { type: String, required: true, unique: true, index: true },
+
+    /** Denormalized from userId so analytics can group without parsing. */
+    platform: { type: String, enum: PLATFORMS, default: DEFAULT_PLATFORM, index: true },
     username: { type: String, default: null },
     firstName: { type: String, default: null },
     lastName: { type: String, default: null },
@@ -55,7 +65,16 @@ const UserSchema = new Schema(
 
 UserSchema.methods.toPublic = function toPublic(freeBuildsLeft) {
   return {
-    userId: this.userId,
+    /**
+     * The RAW platform id, not the stored composite.
+     *
+     * The composite key is a storage detail that exists to keep two platforms
+     * from colliding. A client already knows which platform it is on, and the
+     * id it recognizes as itself is the raw one — the Mini App would otherwise
+     * start seeing "telegram:100001" where it has always seen "100001".
+     */
+    userId: rawIdOf(this.userId),
+    platform: this.platform,
     username: this.username,
     firstName: this.firstName,
     buildsTotal: this.buildsTotal,

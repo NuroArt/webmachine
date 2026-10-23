@@ -35,6 +35,17 @@ const { MongoMemoryServer } = require(path.join(ROOT, 'node_modules', 'mongodb-m
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+/**
+ * User ids are stored composite ("<platform>:<rawId>") so a Telegram and a
+ * Discord user with the same numeric id cannot collide on one row.
+ *
+ * The HTTP surface still takes raw platform ids — that is what Telegram sends
+ * — so only direct database assertions need this. A bare id in a query
+ * matches nothing and reads as "the user was never created", which is a
+ * confusing way to fail.
+ */
+const tg = (id) => `telegram:${id}`;
+
 let passed = 0;
 let failed = 0;
 
@@ -192,7 +203,7 @@ async function call(method, routePath, { body, initData, headers = {}, raw = fal
   } catch {
     /* non-JSON body, e.g. a served preview page */
   }
-  return { status: res.status, json, text };
+  return { status: res.status, headers: res.headers, json, text };
 }
 
 const INPUTS = {
@@ -219,6 +230,7 @@ async function main() {
   const Transaction = require(path.join(ROOT, 'src/models/Transaction'));
   const Site = require(path.join(ROOT, 'src/models/Site'));
   const User = require(path.join(ROOT, 'src/models/User'));
+  const service = require(path.join(ROOT, 'src/build/service'));
 
   await connectDb();
 
@@ -289,7 +301,7 @@ async function main() {
 
   await test('calling state twice does not create a second owner', async () => {
     await call('GET', '/api/state', { initData: alice });
-    assert.strictEqual(await User.countDocuments({ userId: String(ALICE) }), 1);
+    assert.strictEqual(await User.countDocuments({ userId: tg(ALICE) }), 1);
   });
 
   /* ---- the free build ------------------------------------------------ */
@@ -314,11 +326,11 @@ async function main() {
   });
 
   await test('the free build charged nothing and counted once', async () => {
-    const user = await User.findOne({ userId: String(ALICE) });
+    const user = await User.findOne({ userId: tg(ALICE) });
     assert.strictEqual(user.starsSpent, 0);
     assert.strictEqual(user.buildsTotal, 1);
     assert.strictEqual(user.sitesBuilt, 1);
-    assert.strictEqual(await Transaction.countDocuments({ userId: String(ALICE) }), 0);
+    assert.strictEqual(await Transaction.countDocuments({ userId: tg(ALICE) }), 0);
   });
 
   await test('the second free build in the window is refused', async () => {
@@ -392,7 +404,7 @@ async function main() {
   /* ---- ownership ----------------------------------------------------- */
 
   await test("another owner cannot read someone else's build", async () => {
-    const site = await Site.findOne({ userId: String(ALICE) });
+    const site = await Site.findOne({ userId: tg(ALICE) });
     const r = await call('GET', `/api/build/${site._id}`, { initData: bob });
     assert.strictEqual(r.status, 403);
     assert.strictEqual(r.json.error.code, 'FORBIDDEN');
@@ -424,10 +436,28 @@ async function main() {
   });
 
   await test('the invoice payload binds the product and the buyer', async () => {
-    const [kind, productId, userId] = invoicePayload.split(':');
+    // Parsed, not split. The payload is pipe-delimited precisely because a
+    // composite user id contains a colon, and splitting on ':' used to hand
+    // back "telegram" as the buyer.
+    const { kind, productId, userId } = service.parseInvoicePayload(invoicePayload);
     assert.strictEqual(kind, 'build');
     assert.strictEqual(productId, 'site');
-    assert.strictEqual(userId, String(BOB));
+    assert.strictEqual(userId, tg(BOB));
+  });
+
+  await test('a legacy colon payload still parses, so open invoices stay payable', async () => {
+    const legacy = `build:site:${BOB}:deadbeef`;
+    const parsed = service.parseInvoicePayload(legacy);
+    assert.strictEqual(parsed.kind, 'build');
+    assert.strictEqual(parsed.productId, 'site');
+    assert.strictEqual(parsed.userId, tg(BOB), 'legacy bare id must normalize');
+  });
+
+  await test('a junk payload parses to nulls rather than throwing', async () => {
+    for (const junk of ['', 'build', 'build|', null, undefined, 'nonsense']) {
+      const parsed = service.parseInvoicePayload(junk);
+      assert.strictEqual(parsed.kind === 'build' && Boolean(parsed.userId), false, String(junk));
+    }
   });
 
   await test('two invoices get different payloads', async () => {
@@ -598,14 +628,14 @@ async function main() {
   });
 
   await test('the buyer counters moved exactly once', async () => {
-    const user = await User.findOne({ userId: String(BOB) });
+    const user = await User.findOne({ userId: tg(BOB) });
     assert.strictEqual(user.buildsTotal, 1);
     assert.strictEqual(user.starsSpent, 1500);
   });
 
   await test('replaying the same payment builds nothing a second time', async () => {
     const before = generator.calls;
-    const docsBefore = await Site.countDocuments({ userId: String(BOB) });
+    const docsBefore = await Site.countDocuments({ userId: tg(BOB) });
 
     await call('POST', '/webhook/telegram', {
       headers: WH,
@@ -614,7 +644,7 @@ async function main() {
     await settle();
 
     assert.strictEqual(generator.calls, before, 'the generator ran again on a replay');
-    assert.strictEqual(await Site.countDocuments({ userId: String(BOB) }), docsBefore);
+    assert.strictEqual(await Site.countDocuments({ userId: tg(BOB) }), docsBefore);
     assert.strictEqual(await Transaction.countDocuments({ telegramChargeId: CHARGE }), 1);
   });
 
@@ -663,7 +693,7 @@ async function main() {
   });
 
   await test('a failed build did not increment the buyer counters', async () => {
-    const user = await User.findOne({ userId: String(BOB) });
+    const user = await User.findOne({ userId: tg(BOB) });
     assert.strictEqual(user.buildsTotal, 1, 'a failed build was counted');
     assert.strictEqual(user.starsSpent, 1500, 'a refunded build was still charged');
   });
@@ -727,7 +757,78 @@ async function main() {
       ['BUILD_IN_PROGRESS', 'FREE_BUILD_USED'].includes(loser.json.error.code),
       loser.json.error.code
     );
-    assert.strictEqual(await Site.countDocuments({ userId: '100003' }), 1);
+    const n = await Site.countDocuments({ userId: tg('100003') });
+    if (n !== 1) {
+      const carolSites = await Site.find({}).lean();
+      const carolUsers = await User.find({}, { userId: 1, platform: 1, freeBuildsUsedToday: 1, buildsTotal: 1 }).lean();
+      console.log('\n  DEBUG sites:', JSON.stringify(carolSites.map(x => ({ u: x.userId, p: x.platform, s: x.status, pid: x.productId })), null, 1));
+      console.log('  DEBUG users:', JSON.stringify(carolUsers, null, 1));
+      console.log('  DEBUG a:', a.status, JSON.stringify(a.json?.error || a.json?.data?.build?.id));
+      console.log('  DEBUG b:', b.status, JSON.stringify(b.json?.error || b.json?.data?.build?.id));
+    }
+    assert.strictEqual(n, 1);
+  });
+
+  /* ---- legal pages --------------------------------------------------- */
+
+  await test('GET /terms serves a page with no auth', async () => {
+    const r = await call('GET', '/terms');
+    assert.strictEqual(r.status, 200);
+    assert.ok(/text\/html/.test(r.headers.get('content-type')), r.headers.get('content-type'));
+    assert.ok(r.text.includes('Terms of Service'), 'no heading');
+    assert.ok(r.text.includes('<!doctype html>'), 'not a full document');
+  });
+
+  await test('GET /privacy names what is actually stored', async () => {
+    const r = await call('GET', '/privacy');
+    assert.strictEqual(r.status, 200);
+    // If these claims stop being true, the page is lying and the test should
+    // be what notices.
+    assert.ok(r.text.includes('Anthropic'), 'does not disclose the model provider');
+    assert.ok(r.text.includes('/forget'), 'does not tell people how to delete');
+    assert.ok(/preview/i.test(r.text), 'does not warn that preview links are public');
+  });
+
+  await test('the misremembered URLs redirect rather than 404', async () => {
+    for (const [from, to] of [['/terms-of-service', '/terms'], ['/privacy-policy', '/privacy']]) {
+      const r = await call('GET', from);
+      assert.strictEqual(r.status, 301, from);
+      assert.strictEqual(r.headers.get('location'), to, from);
+    }
+  });
+
+  /* ---- erasure (last: it destroys fixtures) --------------------------- */
+
+  await test('/forget deletes builds and scrubs what the buyer typed', async () => {
+    const before = await Site.countDocuments({ userId: tg(BOB) });
+    assert.ok(before > 0, 'fixture has no builds to delete');
+
+    const result = await service.deleteUserData(tg(BOB));
+    assert.strictEqual(result.sitesDeleted, before);
+
+    assert.strictEqual(await Site.countDocuments({ userId: tg(BOB) }), 0);
+
+    const txs = await Transaction.find({ userId: tg(BOB) }).lean();
+    assert.ok(txs.length > 0, 'payment records must survive erasure');
+    for (const tx of txs) {
+      assert.strictEqual(tx.inputs, null, 'intake answers survived');
+      assert.strictEqual(tx.rawUpdate, null, 'raw payment payload survived');
+      // The financial facts stay: a refund may still be owed.
+      assert.ok(tx.stars >= 0 && tx.status, 'financial record was destroyed');
+    }
+
+    const user = await User.findOne({ userId: tg(BOB) });
+    assert.strictEqual(user.username, null, 'username survived');
+    assert.strictEqual(user.firstName, null, 'display name survived');
+    assert.strictEqual(user.intake, null, 'in-progress intake survived');
+  });
+
+  await test('erasure does not hand back a fresh free build', async () => {
+    // Deleting the row outright would reset the daily counter, turning the
+    // privacy feature into an unlimited-builds exploit.
+    const user = await User.findOne({ userId: tg(BOB) });
+    assert.ok(user, 'the owner row must survive, scrubbed');
+    assert.ok(user.buildsTotal > 0, 'lifetime counters were reset');
   });
 
   /* ---- teardown ------------------------------------------------------ */
