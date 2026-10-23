@@ -19,7 +19,8 @@
     "test": "node scripts/selfTest.js",
     "test:e2e": "node scripts/e2eTest.js",
     "test:all": "npm run check && npm test && npm run test:e2e",
-    "db:check": "node scripts/dbCheck.js"
+    "db:check": "node scripts/dbCheck.js",
+    "usage": "node scripts/usage.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
