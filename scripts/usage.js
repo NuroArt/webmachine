@@ -30,11 +30,23 @@ const config = require('../src/config');
 const pct = (n, of) => (of === 0 ? '   — ' : `${((n / of) * 100).toFixed(0).padStart(4)}%`);
 const row = (label, n, of) => `  ${label.padEnd(34)} ${String(n).padStart(6)}  ${pct(n, of)}`;
 
-/** Owners are you. Counting yourself as traction is how you fool yourself. */
+/**
+ * Owners are you. Counting yourself as traction is how you fool yourself.
+ *
+ * Falls back to reading OWNER_IDS directly, so this script still runs against
+ * a deploy whose config predates the owner-exemption feature. A reporting
+ * tool that crashes because one optional field is missing is worse than one
+ * that reports slightly less.
+ */
 function ownerIds() {
-  return new Set(
-    config.ownerIds.map((id) => (id.includes(':') ? id : `telegram:${id}`))
-  );
+  const raw = Array.isArray(config.ownerIds)
+    ? config.ownerIds
+    : String(process.env.OWNER_IDS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+  return new Set(raw.map((id) => (id.includes(':') ? id : `telegram:${id}`)));
 }
 
 async function main() {
