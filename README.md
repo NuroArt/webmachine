@@ -171,6 +171,27 @@ would be dropped the moment the visitor clicks through to the next page.
 
 ---
 
+## Owner exemption
+
+`OWNER_IDS` lists accounts exempt from the daily free-build limit:
+
+```
+OWNER_IDS=8104424408,discord:1562303621473767426
+```
+
+A bare number reads as Telegram, consistent with every other id in the
+system; a Discord id needs its prefix. One setting covers both bots.
+
+This exists so that testing the product does not mean raising
+`FREE_BUILDS_PER_DAY` for everyone — the version of this that ends with a
+stranger generating ten pages a day against your Anthropic credit.
+
+Owners are exempt from the daily cap **only**. The one-build-at-a-time
+concurrency guard and the `DAILY_USD_CAP` spend breaker still apply, because
+those protect the service and the wallet rather than rationing a free tier.
+
+---
+
 ## Operational limits
 
 | Guard | Default | Where |

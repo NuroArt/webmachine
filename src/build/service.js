@@ -70,12 +70,39 @@ async function loadOwner(userId, profile = {}) {
 }
 
 /**
+ * Owners bypass the daily free-build limit. See config.ownerIds.
+ *
+ * Ids are normalized on both sides, so OWNER_IDS can hold a bare Telegram id
+ * or a prefixed one and still match the composite form actually stored.
+ */
+const OWNER_SET = new Set(config.ownerIds.map((id) => normalizeUserId(id)));
+
+function isOwner(userId) {
+  if (!userId) return false;
+  try {
+    return OWNER_SET.has(normalizeUserId(userId));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A finite stand-in for "no limit".
+ *
+ * Not Infinity: this value is serialized into /api/state, and JSON.stringify
+ * turns Infinity into null, which fails the owner schema's integer check and
+ * renders as an empty slot in the Mini App.
+ */
+const UNLIMITED = 9999;
+
+/**
  * Free builds reset on a rolling 24h window, computed on read.
  *
  * No cron job: a scheduled reset is one more thing that can silently stop
  * running, and nothing here needs a precise midnight boundary.
  */
 function freeBuildsLeft(user) {
+  if (isOwner(user?.userId)) return UNLIMITED;
   const started = user.freeWindowStartedAt ? user.freeWindowStartedAt.getTime() : 0;
   if (Date.now() - started >= DAY_MS) return config.build.freeBuildsPerDay;
   return Math.max(0, config.build.freeBuildsPerDay - (user.freeBuildsUsedToday || 0));
@@ -87,6 +114,11 @@ function freeWindowResetsIn(user) {
 }
 
 async function consumeFreeBuild(user) {
+  // An owner's quota is never checked, so counting against it would only
+  // inflate a number that is meant to read as "builds used out of the daily
+  // allowance". Lifetime totals still increment in runBuild.
+  if (isOwner(user?.userId)) return;
+
   const started = user.freeWindowStartedAt ? user.freeWindowStartedAt.getTime() : 0;
   if (Date.now() - started >= DAY_MS) {
     user.freeWindowStartedAt = new Date();
@@ -670,6 +702,8 @@ async function getOwnedSite(userId, siteId) {
 module.exports = {
   loadOwner,
   freeBuildsLeft,
+  isOwner,
+  UNLIMITED,
   freeWindowResetsIn,
   consumeFreeBuild,
   claimBuildSlot,
