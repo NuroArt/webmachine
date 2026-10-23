@@ -12,6 +12,9 @@
 process.env.NODE_ENV = 'development';
 process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/webmachine-test';
 process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '123456:TEST-TOKEN-FOR-SELFTEST';
+// Deliberately one bare id and one prefixed, to pin the normalization
+// contract: OWNER_IDS should accept either spelling.
+process.env.OWNER_IDS = '5550001,discord:5550002';
 
 const assert = require('assert');
 const crypto = require('crypto');
@@ -555,6 +558,75 @@ test('a composite id round-trips back to its platform and raw id', () => {
 test('an unknown platform is refused rather than stored', () => {
   assert.throws(() => identity.composeUserId('slack', '1'), /Unknown platform/);
   assert.throws(() => identity.composeUserId('telegram', ''), /requires a raw user id/);
+});
+
+/* ────────────────────────────────────────────────────────────
+   OWNER BYPASS
+
+   Testing the product should not mean raising the free limit for
+   everyone, which is the version that ends with a stranger generating
+   ten pages a day against your Anthropic credit.
+   ──────────────────────────────────────────────────────────── */
+
+test('an owner is matched whether OWNER_IDS holds a bare or prefixed id', () => {
+  // OWNER_IDS is '5550001,discord:5550002' — bare, and prefixed.
+  assert.strictEqual(service.isOwner('5550001'), true, 'bare id in env, bare lookup');
+  assert.strictEqual(service.isOwner('telegram:5550001'), true, 'bare id in env, composite lookup');
+  assert.strictEqual(service.isOwner('discord:5550002'), true, 'prefixed id in env');
+});
+
+test('the same number on the other platform is NOT an owner', () => {
+  // 5550001 is listed bare, which reads as Telegram. The Discord user with
+  // that number is a different person and must not inherit the exemption.
+  assert.strictEqual(service.isOwner('discord:5550001'), false);
+  assert.strictEqual(service.isOwner('telegram:5550002'), false);
+});
+
+test('a malformed or empty id is never an owner', () => {
+  for (const bad of ['', null, undefined, 'slack:1', '   ']) {
+    assert.strictEqual(service.isOwner(bad), false, String(bad));
+  }
+});
+
+test('an owner bypasses an exhausted daily quota', () => {
+  const exhausted = {
+    userId: 'telegram:5550001',
+    freeWindowStartedAt: new Date(),
+    freeBuildsUsedToday: 999,
+  };
+  assert.strictEqual(service.freeBuildsLeft(exhausted), service.UNLIMITED);
+
+  // The same state for a non-owner is blocked.
+  assert.strictEqual(
+    service.freeBuildsLeft({ ...exhausted, userId: 'telegram:999999' }),
+    0
+  );
+});
+
+test('a non-owner still gets the configured daily allowance', () => {
+  const left = service.freeBuildsLeft({
+    userId: 'telegram:999999',
+    freeWindowStartedAt: new Date(),
+    freeBuildsUsedToday: 1,
+  });
+  assert.strictEqual(left, Math.max(0, config.build.freeBuildsPerDay - 1));
+});
+
+test('an exhausted non-owner is reported as zero, not negative', () => {
+  const left = service.freeBuildsLeft({
+    userId: 'telegram:999999',
+    freeWindowStartedAt: new Date(),
+    freeBuildsUsedToday: 500,
+  });
+  assert.strictEqual(left, 0);
+});
+
+test('the unlimited sentinel survives JSON, unlike Infinity', () => {
+  // /api/state serializes this. JSON.stringify(Infinity) is null, which fails
+  // the owner schema's integer check and renders as an empty slot.
+  assert.strictEqual(Number.isFinite(service.UNLIMITED), true);
+  assert.strictEqual(JSON.parse(JSON.stringify(service.UNLIMITED)), service.UNLIMITED);
+  assert.ok(service.UNLIMITED > 100);
 });
 
 /* ────────────────────────────────────────────────────────────

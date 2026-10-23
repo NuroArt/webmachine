@@ -129,6 +129,27 @@ const config = {
     funnel: num('PRICE_FUNNEL_STARS', 3800),
   },
 
+  /**
+   * Accounts exempt from the daily free-build limit.
+   *
+   * Comma-separated ids, on either platform. A bare number is read as
+   * Telegram (consistent with every other id in the system); a Discord id
+   * needs its prefix:
+   *
+   *   OWNER_IDS=8104424408,discord:1562303621473767426
+   *
+   * This exists so testing the product does not mean raising the limit for
+   * everyone, which is the version of this that ends with a stranger
+   * generating ten pages a day against your Anthropic credit. Owners are
+   * exempt from the daily cap only — the one-build-at-a-time guard and the
+   * daily spend breaker still apply, because those protect the service and
+   * the wallet rather than rationing a free tier.
+   */
+  ownerIds: (process.env.OWNER_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+
   build: {
     freeBuildsPerDay: num('FREE_BUILDS_PER_DAY', 1),
     maxPagesPerBuild: num('MAX_PAGES_PER_BUILD', 6),
