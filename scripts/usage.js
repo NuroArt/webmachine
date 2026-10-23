@@ -135,10 +135,46 @@ async function main() {
     }
   }
 
+  /* ---- why builds failed ---------------------------------------------- */
+  if (failed > 0) {
+    const reasons = await Site.aggregate([
+      { $match: { status: 'failed' } },
+      { $group: { _id: '$error', n: { $sum: 1 }, last: { $max: '$createdAt' } } },
+      { $sort: { n: -1 } },
+      { $limit: 10 },
+    ]);
+
+    console.log('\n═══ WHY BUILDS FAILED ═══════════════════════════════════\n');
+    for (const r of reasons) {
+      const when = r.last ? new Date(r.last).toISOString().slice(0, 16).replace('T', ' ') : '';
+      console.log(`  ${String(r.n).padStart(3)} ×  ${String(r._id || '(no error recorded)').slice(0, 90)}`);
+      console.log(`        last: ${when}`);
+    }
+
+    // Truncation is logged as a note rather than an error, so a build can
+    // "succeed" with a half-written stylesheet. Surfaced here because it is
+    // the same underlying problem as an outright failure: the model ran out
+    // of room.
+    const truncated = await Site.countDocuments({
+      generationNotes: { $elemMatch: { $regex: 'token limit|truncated', $options: 'i' } },
+    });
+    if (truncated) {
+      console.log(`\n  ${String(truncated).padStart(3)} ×  builds that SUCCEEDED but hit the token limit`);
+    }
+  }
+
   /* ---- the read -------------------------------------------------------- */
   console.log('\n═══ THE READ ════════════════════════════════════════════\n');
 
-  if (strangers === 0 && owners.size) {
+  // Reliability first. A generator that fails two builds in three makes every
+  // other number meaningless — there is no point reading a funnel whose top
+  // is handing people errors.
+  if (sites >= 5 && failed / sites > 0.2) {
+    const rate = Math.round((failed / sites) * 100);
+    console.log(`  ${rate}% of builds are FAILING. Fix this before anything else.`);
+    console.log('  Every second person who tries this is getting nothing, and');
+    console.log('  no amount of traffic survives that. See WHY BUILDS FAILED above.');
+  } else if (strangers === 0 && owners.size) {
     console.log('  Nobody but you has run this yet. Nothing about the product');
     console.log('  is disproven — it has not been seen. The constraint is');
     console.log('  distribution, and no amount of code changes that.');
