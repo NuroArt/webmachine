@@ -166,13 +166,14 @@ async function setMyCommands() {
       { command: 'pricing', description: 'What things cost' },
       { command: 'invite', description: 'Your referral link' },
       { command: 'refund', description: 'Instant refund, no questions' },
+      { command: 'forget', description: 'Delete your builds and details' },
       { command: 'help', description: 'How this works' },
     ],
   });
 }
 
 /** The keyboard that launches the Mini App. */
-function miniAppKeyboard(label = 'Open WebMachine') {
+function miniAppKeyboard(label = `Open ${config.brandName}`) {
   if (!config.telegram.miniAppUrl) return undefined;
   return { inline_keyboard: [[{ text: label, web_app: { url: config.telegram.miniAppUrl } }]] };
 }

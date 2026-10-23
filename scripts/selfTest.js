@@ -24,6 +24,13 @@ const { verifyInitData } = require('../src/telegram/auth');
 const screens = require('../src/ui/screens');
 const format = require('../src/ui/format');
 
+const config = require('../src/config');
+const bot = require('../src/telegram/bot');
+const identity = require('../src/utils/identity');
+const service = require('../src/build/service');
+const discordCommands = require('../src/discord/commands');
+const discordHandlers = require('../src/discord/handlers');
+
 let passed = 0;
 let failed = 0;
 
@@ -37,6 +44,16 @@ function test(name, fn) {
     console.error(`  FAIL  ${name}\n        ${err.message}`);
   }
 }
+
+/**
+ * Async cases are queued and drained before the summary.
+ *
+ * `test` above is synchronous: handed an async function it would await
+ * nothing, count a pass before the body ran, and let any rejection escape as
+ * an unhandled promise — a test that can never fail.
+ */
+const asyncTests = [];
+const testAsync = (name, fn) => asyncTests.push([name, fn]);
 
 console.log('\nWebMachine self-test\n');
 
@@ -469,12 +486,249 @@ test('the spend breaker starts closed and resets', () => {
 });
 
 /* ────────────────────────────────────────────────────────────
+   BRAND NAME
+
+   One value drives every user-facing surface. It used to be hardcoded in
+   four files, which is how a rename leaves one behind and ships two names.
+   ──────────────────────────────────────────────────────────── */
+
+test('the brand name defaults to FivePageBot', () => {
+  assert.strictEqual(config.brandName, 'FivePageBot');
+  // Discord inherits it unless explicitly overridden.
+  assert.strictEqual(config.discord.brandName, config.brandName);
+});
+
+test('the Telegram Mini App button carries the configured brand', () => {
+  const kb = bot.miniAppKeyboard();
+  // Undefined when MINI_APP_URL is unset, which is the case under test env.
+  const label = kb ? kb.inline_keyboard[0][0].text : `Open ${config.brandName}`;
+  assert.ok(label.includes(config.brandName), label);
+});
+
+test('the Mini App page title matches the configured brand', () => {
+  // public/index.html is static and cannot read config, so it is the one
+  // surface that drifts silently on a rename. Pin it here.
+  const html = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'public', 'index.html'),
+    'utf8'
+  );
+  const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1];
+  assert.strictEqual(title, config.brandName);
+});
+
+/* ────────────────────────────────────────────────────────────
+   PLATFORM-SCOPED IDENTITY
+
+   The bug these guard against is silent: a bare id in a query matches
+   nothing, so a collision or a missed prefix reads as "this user has no
+   builds" rather than as an error.
+   ──────────────────────────────────────────────────────────── */
+
+test('a Telegram and a Discord user with the same number are different owners', () => {
+  const a = identity.composeUserId('telegram', '12345');
+  const b = identity.composeUserId('discord', '12345');
+  assert.notStrictEqual(a, b);
+  assert.strictEqual(a, 'telegram:12345');
+  assert.strictEqual(b, 'discord:12345');
+});
+
+test('a bare id is treated as Telegram, so existing call sites keep working', () => {
+  assert.strictEqual(identity.normalizeUserId('100001'), 'telegram:100001');
+  assert.strictEqual(identity.normalizeUserId(100001), 'telegram:100001');
+});
+
+test('normalizing is idempotent', () => {
+  const once = identity.normalizeUserId('discord:999');
+  assert.strictEqual(identity.normalizeUserId(once), once);
+  assert.strictEqual(identity.normalizeUserId(identity.normalizeUserId(once)), once);
+});
+
+test('a composite id round-trips back to its platform and raw id', () => {
+  for (const [platform, raw] of [['telegram', '1'], ['discord', '847262518293847262']]) {
+    const composite = identity.composeUserId(platform, raw);
+    assert.deepStrictEqual(identity.parseUserId(composite), { platform, rawId: raw });
+    assert.strictEqual(identity.platformOf(composite), platform);
+    assert.strictEqual(identity.rawIdOf(composite), raw);
+  }
+});
+
+test('an unknown platform is refused rather than stored', () => {
+  assert.throws(() => identity.composeUserId('slack', '1'), /Unknown platform/);
+  assert.throws(() => identity.composeUserId('telegram', ''), /requires a raw user id/);
+});
+
+/* ────────────────────────────────────────────────────────────
+   INVOICE PAYLOAD
+
+   Colon-delimited payloads broke the moment ids became composite: the
+   pre-checkout handler read field 3 as the buyer and got "telegram",
+   which rejected every paid invoice.
+   ──────────────────────────────────────────────────────────── */
+
+test('a current payload survives a composite id', () => {
+  const p = `build|site|${identity.composeUserId('telegram', '100002')}|ab12cd34`;
+  const parsed = service.parseInvoicePayload(p);
+  assert.strictEqual(parsed.kind, 'build');
+  assert.strictEqual(parsed.productId, 'site');
+  assert.strictEqual(parsed.userId, 'telegram:100002');
+  assert.strictEqual(parsed.nonce, 'ab12cd34');
+});
+
+test('a legacy colon payload still parses, so open invoices stay payable', () => {
+  const parsed = service.parseInvoicePayload('build:site:100002:ab12cd34');
+  assert.strictEqual(parsed.kind, 'build');
+  assert.strictEqual(parsed.productId, 'site');
+  assert.strictEqual(parsed.userId, 'telegram:100002');
+});
+
+test('a malformed payload yields nulls instead of throwing', () => {
+  for (const junk of ['', 'build', 'build|', 'x', null, undefined, 'a:b']) {
+    const parsed = service.parseInvoicePayload(junk);
+    assert.ok(!(parsed.kind === 'build' && parsed.userId), `accepted junk: ${junk}`);
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   DISCORD ADAPTER
+   ──────────────────────────────────────────────────────────── */
+
+test('the slash commands stay within Discord field limits', () => {
+  const json = discordCommands.toJSON();
+  assert.deepStrictEqual(
+    json.map((c) => c.name).sort(),
+    ['build', 'builds', 'forget', 'help', 'pricing']
+  );
+  for (const c of json) {
+    assert.ok(/^[a-z][a-z0-9_-]{0,31}$/.test(c.name), `bad command name: ${c.name}`);
+    assert.ok(c.description.length <= 100, `description too long: ${c.name}`);
+    assert.ok(c.description.length > 0, `no description: ${c.name}`);
+  }
+});
+
+test('every registered command has a handler', () => {
+  // Catches a rename that updates the builder but not the router, which would
+  // otherwise surface as a command that silently does nothing.
+  const names = discordCommands.toJSON().map((c) => c.name);
+  for (const name of names) {
+    assert.ok(discordHandlers.COMMAND_NAMES.includes(name), `no handler for /${name}`);
+  }
+  assert.deepStrictEqual(discordHandlers.COMMAND_NAMES.slice().sort(), names.slice().sort());
+});
+
+test('the intake modal collects all four answers in one submission', () => {
+  const modal = discordHandlers.buildModal().toJSON();
+  assert.ok(modal.title.length <= 45, 'modal title over 45 chars');
+  assert.strictEqual(modal.custom_id, discordHandlers.MODAL_ID);
+
+  const inputs = modal.components.map((row) => row.components[0]);
+  assert.deepStrictEqual(
+    inputs.map((i) => i.custom_id),
+    ['business', 'offer', 'audience', 'style']
+  );
+
+  // The two the generator cannot work without are required; the other two are
+  // not, because forcing a style answer out of someone who has no opinion is
+  // how you get "idk" as a design brief.
+  assert.deepStrictEqual(
+    inputs.map((i) => Boolean(i.required)),
+    [true, true, false, false]
+  );
+
+  for (const i of inputs) {
+    assert.ok(i.label.length <= 45, `label over 45 chars: ${i.custom_id}`);
+    // service.validateInputs caps business/offer/audience at 600 and style at
+    // 200. A modal that accepts more would silently truncate the user's words.
+    assert.ok(i.max_length <= 600, `max_length too high: ${i.custom_id}`);
+  }
+});
+
+test('every command is usable in a DM', () => {
+  // A generated page is personal. Someone who does not want their business
+  // description in a public channel must be able to run the bot in a DM.
+  for (const c of discordCommands.toJSON()) {
+    assert.strictEqual(c.dm_permission, true, `/${c.name} is server-only`);
+  }
+});
+
+test('erasure is reachable from the bot, not only by email', () => {
+  // The privacy policy promises /forget. If the command stops existing, the
+  // published policy becomes a false claim.
+  assert.ok(discordHandlers.COMMAND_NAMES.includes('forget'));
+  assert.strictEqual(typeof service.deleteUserData, 'function');
+});
+
+test('Discord sells only the free product', () => {
+  assert.strictEqual(discordHandlers.FREE_PRODUCT.free, true);
+  assert.strictEqual(discordHandlers.FREE_PRODUCT.starCost, 0);
+});
+
+test('the zip attach threshold stays under Discord free-tier upload limit', () => {
+  assert.ok(discordHandlers.ATTACH_LIMIT_BYTES < 10 * 1024 * 1024);
+});
+
+test('the upsell renders nothing when no Telegram username is configured', () => {
+  // A missing env var must produce no line at all rather than a dead t.me link.
+  const saved = config.telegram.botUsername;
+  try {
+    config.telegram.botUsername = '';
+    assert.strictEqual(discordHandlers.upsellLine(), '');
+
+    config.telegram.botUsername = 'fivepagebot';
+    const line = discordHandlers.upsellLine();
+    assert.ok(line.includes('https://t.me/fivepagebot'), 'no link in upsell');
+    assert.ok(line.includes(String(catalog.PRODUCTS_BY_ID.site.starCost)), 'no price in upsell');
+  } finally {
+    config.telegram.botUsername = saved;
+  }
+});
+
+testAsync('the 3-second preflight falls back rather than hanging the interaction', async () => {
+  const slow = new Promise((resolve) => setTimeout(() => resolve('late'), 5000).unref?.());
+  const r = await discordHandlers.raceWithTimeout(slow, 30, 'fallback');
+  assert.strictEqual(r, 'fallback');
+
+  const fast = Promise.resolve('quick');
+  assert.strictEqual(await discordHandlers.raceWithTimeout(fast, 500, 'fallback'), 'quick');
+
+  // A rejection must read as the fallback, not blow up the interaction.
+  const boom = Promise.reject(new Error('mongo is down'));
+  assert.strictEqual(await discordHandlers.raceWithTimeout(boom, 500, 'fallback'), 'fallback');
+});
+
+/* ────────────────────────────────────────────────────────────
    SUMMARY
    ──────────────────────────────────────────────────────────── */
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-if (failed) {
-  console.error('Self-test failed.');
-  process.exit(1);
-}
-console.log('Self-test passed.');
+(async () => {
+  /**
+   * Holds the event loop open for the duration of the async drain.
+   *
+   * Without it the process exits before a single async case runs. The timers
+   * under test are deliberately `unref`'d — a pending 1.2s preflight must not
+   * delay a deploy's shutdown — and an `await` on a promise that only an
+   * unref'd timer will settle does not keep Node alive on its own. The
+   * symptom is silent: the suite prints its last sync case and exits 0,
+   * reporting nothing and failing nothing.
+   */
+  const keepAlive = setInterval(() => {}, 1000);
+
+  for (const [name, fn] of asyncTests) {
+    try {
+      await fn();
+      passed += 1;
+      console.log(`  ok    ${name}`);
+    } catch (err) {
+      failed += 1;
+      console.error(`  FAIL  ${name}\n        ${err.message}`);
+    }
+  }
+
+  clearInterval(keepAlive);
+
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  if (failed) {
+    console.error('Self-test failed.');
+    process.exit(1);
+  }
+  console.log('Self-test passed.');
+})();

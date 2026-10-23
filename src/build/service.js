@@ -16,11 +16,11 @@ const { generateBuild } = require('../claude/siteGenerator');
 const { budgetExceeded } = require('../claude/client');
 const bot = require('../telegram/bot');
 
+const { normalizeUserId, platformOf } = require('../utils/identity');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A build is abandoned, not running, after this long. Unsticks a crashed slot. */
 const STALE_BUILD_MS = 10 * 60 * 1000;
-
-const normalizeUserId = (id) => String(id);
 
 /* ────────────────────────────────────────────────────────────
    OWNERS
@@ -44,6 +44,7 @@ async function loadOwner(userId, profile = {}) {
     $set: { lastSeenAt: new Date() },
     $setOnInsert: {
       userId: id,
+      platform: platformOf(id),
       referralCode: newReferralCode(),
       freeWindowStartedAt: new Date(),
     },
@@ -227,10 +228,18 @@ async function createInvoice(userId, productId, inputs) {
 
   // The payload is unique per invoice so a buyer who abandons one and starts
   // another does not have the first pending row claimed by the second payment.
-  const payload = `build:${product.productId}:${id}:${crypto.randomBytes(4).toString('hex')}`;
+  //
+  // Pipe-delimited, not colon-delimited. User ids became composite
+  // ("telegram:100002"), and a colon-joined payload splits into the WRONG
+  // fields: the pre-checkout handler read field 3 as the buyer and got
+  // "telegram", compared it to the real payer id, and rejected every single
+  // paid invoice. parseInvoicePayload still accepts the old colon form so
+  // invoices already open at deploy time can still be paid.
+  const payload = `build|${product.productId}|${id}|${crypto.randomBytes(4).toString('hex')}`;
 
   const tx = await Transaction.create({
     userId: id,
+    platform: platformOf(id),
     kind: 'stars_purchase',
     stars: product.starCost,
     productId: product.productId,
@@ -254,6 +263,35 @@ async function createInvoice(userId, productId, inputs) {
     starCost: product.starCost,
     transactionId: tx._id.toString(),
   };
+}
+
+/**
+ * Reads an invoice payload back.
+ *
+ * Two formats, because a deploy cannot retroactively change an invoice that is
+ * already sitting unpaid in someone's chat:
+ *
+ *   current  build|<productId>|<platform>:<rawId>|<nonce>
+ *   legacy   build:<productId>:<bareTelegramId>:<nonce>
+ *
+ * Returns `userId` already normalized to composite form, so callers can
+ * compare it directly against a loaded owner.
+ */
+function parseInvoicePayload(payload) {
+  const s = String(payload || '');
+  const miss = { kind: null, productId: null, userId: null, nonce: null };
+
+  if (s.includes('|')) {
+    const [kind, productId, userId, nonce] = s.split('|');
+    if (!kind || !productId || !userId) return miss;
+    return { kind, productId, userId: normalizeUserId(userId), nonce: nonce || null };
+  }
+
+  const parts = s.split(':');
+  if (parts.length < 3) return miss;
+  const [kind, productId, rawUser, nonce] = parts;
+  if (!kind || !productId || !rawUser) return miss;
+  return { kind, productId, userId: normalizeUserId(rawUser), nonce: nonce || null };
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -292,6 +330,7 @@ async function runBuild({ userId, productId, inputs, source = 'stars', transacti
 
   const site = await Site.create({
     userId: id,
+    platform: platformOf(id),
     productId: product.productId,
     name: product.name,
     businessName: clean.business.slice(0, 80),
@@ -402,6 +441,7 @@ async function fulfilPayment({
     if (!tx) {
       tx = await Transaction.create({
         userId: id,
+        platform: platformOf(id),
         kind: 'stars_purchase',
         stars,
         productId,
@@ -517,6 +557,67 @@ async function refundByRequest(userId) {
 }
 
 /* ────────────────────────────────────────────────────────────
+   ERASURE
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * Erases a person's content and identifying details.
+ *
+ * Three deliberate asymmetries, because "delete everything" is the wrong
+ * answer to all three:
+ *
+ * 1. The User row SURVIVES, scrubbed. Deleting it would reset the daily
+ *    free-build counter, turning erasure into an unlimited-builds exploit.
+ *    Counters are not personal data; the name attached to them is, and that
+ *    is what gets cleared.
+ *
+ * 2. Transactions survive, with their intake answers and raw payment payload
+ *    nulled. The amount, status and charge id are financial records — they
+ *    back a refund the buyer may still be entitled to, and Telegram allows
+ *    refunds for 21 days after a charge.
+ *
+ * 3. Sites are deleted outright. They hold the generated pages and the
+ *    business description that was typed in, which is the actual content.
+ *    Deleting them also kills the public preview URLs, which is the point:
+ *    those slugs are capability URLs and work for anyone holding the link.
+ */
+async function deleteUserData(userId) {
+  const id = normalizeUserId(userId);
+
+  const sites = await Site.deleteMany({ userId: id });
+
+  const txs = await Transaction.updateMany(
+    { userId: id },
+    { $set: { inputs: null, rawUpdate: null } }
+  );
+
+  await User.updateOne(
+    { userId: id },
+    {
+      $set: {
+        username: null,
+        firstName: null,
+        lastName: null,
+        languageCode: null,
+        intake: null,
+        activeBuildId: null,
+        activeBuildStartedAt: null,
+      },
+    }
+  );
+
+  logger.info(
+    { userId: id, sites: sites.deletedCount, transactions: txs.modifiedCount },
+    'User data erased'
+  );
+
+  return {
+    sitesDeleted: sites.deletedCount || 0,
+    transactionsScrubbed: txs.modifiedCount || 0,
+  };
+}
+
+/* ────────────────────────────────────────────────────────────
    READ MODEL
    ──────────────────────────────────────────────────────────── */
 
@@ -537,6 +638,20 @@ async function getState(userId, profile = {}) {
     activeBuild: active,
     paused: budgetExceeded(),
   };
+}
+
+/**
+ * A user's builds, newest first.
+ *
+ * Exists so no caller queries Site by a raw userId. Since ids became
+ * composite ("<platform>:<rawId>"), a direct `Site.find({ userId })` with a
+ * bare platform id silently matches nothing — it returns an empty list rather
+ * than an error, so the bug reads as "this user has no builds".
+ */
+async function listSites(userId, limit = 10) {
+  return Site.find({ userId: normalizeUserId(userId) })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(Number(limit) || 10, 50));
 }
 
 async function getSiteBySlug(slug) {
@@ -561,12 +676,15 @@ module.exports = {
   markActiveBuild,
   releaseBuildSlot,
   createInvoice,
+  parseInvoicePayload,
   runBuild,
   fulfilPayment,
   refundByRequest,
   latestRefundable,
   safeRefund,
   getState,
+  deleteUserData,
+  listSites,
   getSiteBySlug,
   getOwnedSite,
   zipBuild,

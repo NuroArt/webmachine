@@ -9,7 +9,6 @@ const logger = require('../utils/logger');
 
 const service = require('../build/service');
 const User = require('../models/User');
-const Site = require('../models/Site');
 const { PRODUCTS, PRODUCTS_BY_ID, usdApprox } = require('../catalog/products');
 
 const router = express.Router();
@@ -65,14 +64,16 @@ async function handlePreCheckout(query) {
   const { id, invoice_payload: payload, total_amount: amount, from } = query;
 
   try {
-    const [kind, productId, userId] = String(payload).split(':');
+    const { kind, productId, userId } = service.parseInvoicePayload(payload);
 
     if (kind !== 'build' || !productId || !userId) {
       await bot.answerPreCheckoutQuery(id, false, 'This invoice is malformed. Please try again.');
       return;
     }
 
-    if (String(from.id) !== String(userId)) {
+    // Both sides composite. Comparing a raw Telegram id against a stored
+    // "telegram:<id>" never matches, which would reject every paid invoice.
+    if (service.normalizeUserId(from.id) !== userId) {
       await bot.answerPreCheckoutQuery(id, false, 'This invoice belongs to another account.');
       return;
     }
@@ -136,7 +137,7 @@ async function handleSuccessfulPayment(message) {
   const userId = String(message.from.id);
   const chatId = message.chat.id;
 
-  const [, productId] = String(sp.invoice_payload).split(':');
+  const { productId } = service.parseInvoicePayload(sp.invoice_payload);
   const product = PRODUCTS_BY_ID[productId];
 
   logger.info(
@@ -497,7 +498,10 @@ async function handleCommand(message) {
       const code = args[0] || null;
       if (code && !user.referredBy && user.buildsTotal === 0 && code !== user.referralCode) {
         const referrer = await User.findOne({ referralCode: code });
-        if (referrer && referrer.userId !== userId) {
+        // Compare composite ids. A bare `userId` would never equal a stored
+        // "telegram:<id>", so the self-referral guard would pass and a user
+        // could credit themselves with their own code.
+        if (referrer && referrer.userId !== service.normalizeUserId(userId)) {
           user.referredBy = referrer.userId;
           await user.save();
           referrer.referrals += 1;
@@ -512,7 +516,7 @@ async function handleCommand(message) {
       await bot.sendMessage(
         chatId,
         [
-          '<b>WebMachine</b>',
+          `<b>${config.brandName}</b>`,
           '',
           'I build real websites and sales funnels. Four questions, about a minute, finished files.',
           '',
@@ -546,7 +550,7 @@ async function handleCommand(message) {
       break;
 
     case '/builds': {
-      const sites = await Site.find({ userId }).sort({ createdAt: -1 }).limit(10);
+      const sites = await service.listSites(userId, 10);
       if (!sites.length) {
         await bot.sendMessage(chatId, 'No builds yet. Send /start.');
         break;
@@ -597,6 +601,53 @@ async function handleCommand(message) {
       break;
     }
 
+    /**
+     * Erasure. Two steps, unlike /refund — a refund is reversible, this is
+     * not. It destroys the generated pages and kills every preview link the
+     * person has shared.
+     */
+    case '/forget': {
+      if (args[0] !== 'confirm') {
+        const sites = await service.listSites(userId, 50);
+        if (!sites.length) {
+          await bot.sendMessage(
+            chatId,
+            'There is nothing stored for you beyond your Telegram user id.'
+          );
+          break;
+        }
+        await bot.sendMessage(
+          chatId,
+          [
+            `This deletes <b>${sites.length} build${sites.length === 1 ? '' : 's'}</b>, the business`,
+            'details you typed in, and your saved name.',
+            '',
+            '<b>Every preview link you have shared will stop working.</b>',
+            'Download anything you still want first — /builds has the links.',
+            '',
+            'Your daily free-build count is kept, so this cannot reset the limit.',
+            'Payment records are kept but stripped of anything you wrote.',
+            '',
+            'This cannot be undone. To go ahead, send:',
+            '<code>/forget confirm</code>',
+          ].join('\n')
+        );
+        break;
+      }
+
+      const result = await service.deleteUserData(userId);
+      await bot.sendMessage(
+        chatId,
+        [
+          `Deleted. ${result.sitesDeleted} build${result.sitesDeleted === 1 ? '' : 's'} removed,`,
+          'along with everything you typed. Preview links are dead.',
+          '',
+          'Send /start any time to begin again.',
+        ].join('\n')
+      );
+      break;
+    }
+
     case '/help':
       await bot.sendMessage(
         chatId,
@@ -606,6 +657,7 @@ async function handleCommand(message) {
           '/pricing — what things cost',
           '/invite — your referral link',
           '/refund — instant refund, no questions',
+          '/forget — delete your builds and details',
           '',
           'A build takes about a minute. You get a .zip plus a live preview link.',
           'Every page works on its own: open any .html and it is already styled.',

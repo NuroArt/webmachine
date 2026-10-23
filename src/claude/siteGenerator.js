@@ -9,6 +9,7 @@ const {
 } = require('./client');
 const P = require('./sitePrompts');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 /**
  * THE GENERATOR
@@ -415,7 +416,7 @@ async function generateBuild(product, inputs, opts = {}) {
       'To publish: upload the folder to any static host (Netlify, Cloudflare',
       'Pages, GitHub Pages, or your existing hosting).',
       '',
-      `Generated ${new Date().toISOString().slice(0, 10)} by WebMachine.`,
+      `Generated ${new Date().toISOString().slice(0, 10)} by ${config.brandName}.`,
     ].join('\n');
 
     return {
