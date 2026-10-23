@@ -76,6 +76,21 @@ async function main() {
   const stuck = await Site.countDocuments({ status: 'generating' });
   const strangerSites = await Site.countDocuments(ownerFilter);
 
+  /**
+   * Reliability is a question about NOW, not about lifetime.
+   *
+   * A migration you debugged for half an hour last week leaves a permanent
+   * dent in the lifetime rate. Reported as current, it sends you to fix
+   * something you already fixed — which is worse than reporting nothing.
+   */
+  const RECENT_DAYS = 7;
+  const since = new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000);
+  const recentSites = await Site.countDocuments({ createdAt: { $gte: since } });
+  const recentFailed = await Site.countDocuments({
+    status: 'failed',
+    createdAt: { $gte: since },
+  });
+
   console.log('\n═══ BUILDS ══════════════════════════════════════════════\n');
   console.log(row('Attempted', sites, sites));
   console.log(row('…succeeded', ready, sites));
@@ -84,6 +99,9 @@ async function main() {
   if (owners.size) {
     console.log(row('…by someone who is not you', strangerSites, sites));
   }
+  console.log('');
+  console.log(row(`Attempted in the last ${RECENT_DAYS} days`, recentSites, recentSites));
+  console.log(row('…failed', recentFailed, recentSites));
 
   /* ---- money ---------------------------------------------------------- */
   const invoices = await Transaction.countDocuments({ kind: 'stars_purchase' });
@@ -169,11 +187,16 @@ async function main() {
   // Reliability first. A generator that fails two builds in three makes every
   // other number meaningless — there is no point reading a funnel whose top
   // is handing people errors.
-  if (sites >= 5 && failed / sites > 0.2) {
+  if (recentSites >= 5 && recentFailed / recentSites > 0.2) {
+    const rate = Math.round((recentFailed / recentSites) * 100);
+    console.log(`  ${rate}% of builds have FAILED in the last ${RECENT_DAYS} days.`);
+    console.log('  Fix this before anything else — every second person who tries');
+    console.log('  is getting nothing, and no traffic survives that.');
+  } else if (failed / Math.max(sites, 1) > 0.2 && recentFailed === 0) {
     const rate = Math.round((failed / sites) * 100);
-    console.log(`  ${rate}% of builds are FAILING. Fix this before anything else.`);
-    console.log('  Every second person who tries this is getting nothing, and');
-    console.log('  no amount of traffic survives that. See WHY BUILDS FAILED above.');
+    console.log(`  ${rate}% of builds failed all-time, but NONE in the last`);
+    console.log(`  ${RECENT_DAYS} days. That is a dent from a past incident, not a`);
+    console.log('  live problem. Check the dates above before acting on it.');
   } else if (strangers === 0 && owners.size) {
     console.log('  Nobody but you has run this yet. Nothing about the product');
     console.log('  is disproven — it has not been seen. The constraint is');
@@ -193,6 +216,17 @@ async function main() {
     console.log('  before buying attention.');
   } else {
     console.log('  The funnel converts. The constraint is volume at the top.');
+  }
+
+  const stillTruncating = await Site.countDocuments({
+    createdAt: { $gte: since },
+    generationNotes: { $elemMatch: { $regex: 'token limit|truncated', $options: 'i' } },
+  });
+  if (stillTruncating) {
+    console.log('');
+    console.log(`  ${stillTruncating} recent build(s) hit the token limit and shipped`);
+    console.log('  truncated. Those pass as successes but deliver a half-written');
+    console.log('  stylesheet. Raise CLAUDE_MAX_TOKENS.');
   }
 
   console.log('');
