@@ -36,6 +36,87 @@ function scrubDashes(s) {
   return String(s).replace(DASH, '. ').replace(/\.\s*\.(?!\.)/g, '.');
 }
 
+/**
+ * Closes a stylesheet that was cut off mid-rule.
+ *
+ * A truncated response leaves a declaration block open, and an open block
+ * swallows everything that follows it — including the structural fallback
+ * appended below, which would silently stop applying. Dropping the partial
+ * rule and balancing the braces makes the tail safe to append to.
+ */
+function repairCss(css) {
+  let s = String(css || '');
+  if (!s.trim()) return s;
+
+  const opens = (s.match(/\{/g) || []).length;
+  const closes = (s.match(/\}/g) || []).length;
+  if (opens <= closes) return s;
+
+  // Discard the unterminated rule rather than guessing at its contents, then
+  // close any enclosing blocks a media query left open.
+  const lastClose = s.lastIndexOf('}');
+  s = lastClose === -1 ? '' : s.slice(0, lastClose + 1);
+
+  const stillOpen = (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+  return stillOpen > 0 ? s + '\n' + '}'.repeat(stillOpen) : s;
+}
+
+/**
+ * Appended after the generated theme, so it wins on the few primitives that
+ * must be right on every single build.
+ *
+ * The model is asked to style every class it was given, and usually does. When
+ * it runs long it stops partway, and the classes it never reached fall back to
+ * browser defaults: an unstyled form with inline labels and ragged inputs is
+ * the most visible version of that. These rules cost a few hundred bytes and
+ * remove that failure mode whether or not the model got that far.
+ *
+ * Colour and type stay with the theme above. Only structure is pinned here.
+ */
+const STRUCTURAL_CSS = `
+/* ── Structural fallback ──────────────────────────────────────
+   Layout primitives for the parts of a page that must hold even
+   if the theme above never reached them.
+
+   Every selector is wrapped in :where(), which carries no
+   specificity at all. Any real rule written above wins; these
+   only apply where nothing else did. Colour comes from the
+   tokens on :root. Safe to edit. */
+
+:where(.wm-form) { display: grid; gap: 18px; width: 100%; max-width: 560px; }
+:where(.wm-field) { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+:where(.wm-label) { display: block; font-size: 0.9rem; font-weight: 600; }
+:where(.wm-input, .wm-textarea) {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+:where(.wm-textarea) { min-height: 120px; resize: vertical; }
+:where(.wm-input, .wm-textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:where(.wm-form) .wm-btn { justify-self: start; }
+
+:where(.wm-cta-band) { width: 100%; padding: 64px 20px; background: var(--surface); }
+:where(.wm-cta-band-inner) { max-width: 1120px; margin: 0 auto; }
+
+:where(.wm-footer) { width: 100%; padding: 40px 20px; border-top: 1px solid var(--border); }
+:where(.wm-footer-inner) { max-width: 1120px; margin: 0 auto; }
+
+:where(.wm-steps) { display: grid; gap: 20px; list-style: none; padding-left: 0; }
+:where(.wm-step) { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: start; }
+:where(.wm-step > .wm-step-num) { grid-column: 1; grid-row: 1; align-self: start; }
+:where(.wm-step > :not(.wm-step-num)) { grid-column: 2; margin: 0; }
+
+@media (max-width: 768px) {
+  :where(.wm-cta-band) { padding: 44px 20px; }
+}
+`;
+
 /** Returns the unique wm- class names that really appear in the markup. */
 function collectClassNames(htmlParts) {
   const found = new Set();
@@ -284,14 +365,20 @@ async function generateCss(brief, classNames, product) {
   const res = await complete({
     system: P.CSS_SYSTEM,
     messages: [{ role: 'user', content: P.buildCssPrompt(brief, classNames, product) }],
-    maxTokens: 8000,
+    // A full site's stylesheet runs past 8k on anything but the shortest class
+    // list. Truncation is not a soft failure here: the rules that go missing
+    // are whichever ones were last in the file, and the buyer sees unstyled
+    // forms at the bottom of the page.
+    maxTokens: 16000,
     temperature: 0.4,
     label: 'css',
   });
 
-  const css = extractCss(res.text);
+  const raw = extractCss(res.text);
+  const css = repairCss(raw);
   const notes = [];
   if (res.truncated) notes.push('style: hit the token limit and may be cut short');
+  if (css !== raw) notes.push('style: closed a rule left open by a truncated response');
   if (css && !css.includes(':root')) notes.push('style: no :root token block found');
 
   return { css, notes, ms: res.ms, ok: Boolean(css && css.length > 400) };
@@ -378,7 +465,7 @@ async function generateBuild(product, inputs, opts = {}) {
       };
     }
 
-    const css = scrubDashes(cssResult.css);
+    const css = scrubDashes(cssResult.css) + STRUCTURAL_CSS;
 
     // ---- 4. assemble ---------------------------------------------------
     onProgress({ stage: 'assemble', label: 'Assembling the files' });
@@ -449,6 +536,8 @@ module.exports = {
   collectClassNames,
   looksUnbalanced,
   scrubDashes,
+  repairCss,
+  STRUCTURAL_CSS,
   normalizeBrief,
   assemblePage,
 };

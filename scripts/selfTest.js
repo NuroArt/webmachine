@@ -303,6 +303,46 @@ test('funnel pages get no nav block', () => {
   assert.ok(sitePrompt.includes('BUSINESS_NAME'), 'site page lost its nav template');
 });
 
+test('a stylesheet cut off mid-rule is closed before anything is appended', () => {
+  // The real failure: the model stops at max_tokens partway through a rule.
+  // The open block then swallows every rule appended after it, so the
+  // structural fallback silently stops applying and the buyer gets an
+  // unstyled form at the bottom of the page.
+  const truncated = '.a { color: red; }\n.b::after {\n  content: "";';
+  const fixed = gen.repairCss(truncated);
+  assert.strictEqual(
+    (fixed.match(/\{/g) || []).length,
+    (fixed.match(/\}/g) || []).length,
+    'braces still unbalanced'
+  );
+  assert.ok(fixed.includes('.a { color: red; }'), 'dropped a complete rule');
+  assert.ok(!/content: ""\s*$/.test(fixed), 'kept the partial rule');
+
+  // Appending to the repaired sheet must leave the appended rule intact.
+  const joined = fixed + gen.STRUCTURAL_CSS;
+  assert.ok(/\.wm-input,?[\s\S]{0,80}width: 100%/.test(joined), 'fallback was swallowed');
+});
+
+test('repairCss leaves a well-formed stylesheet untouched', () => {
+  const good = ':root { --accent: #000; }\n.wm-hero { padding: 2rem; }\n';
+  assert.strictEqual(gen.repairCss(good), good);
+  assert.strictEqual(gen.repairCss(''), '');
+});
+
+test('the structural fallback covers the classes a truncated run loses first', () => {
+  // These sit late in the class list, so they are the first casualties when
+  // the stylesheet runs long. They must never depend on the model.
+  for (const cls of ['wm-form', 'wm-field', 'wm-label', 'wm-input', 'wm-textarea',
+    'wm-cta-band', 'wm-cta-band-inner', 'wm-step', 'wm-step-num']) {
+    assert.ok(gen.STRUCTURAL_CSS.includes(`.${cls}`), `${cls} has no fallback rule`);
+  }
+  assert.strictEqual(
+    (gen.STRUCTURAL_CSS.match(/\{/g) || []).length,
+    (gen.STRUCTURAL_CSS.match(/\}/g) || []).length,
+    'the fallback itself is unbalanced'
+  );
+});
+
 test('page prompts never point a delivered site at an external image host', () => {
   // A hotlinked placeholder outlives the sale: if the host rate-limits or
   // disappears, every site ever delivered shows broken images and the buyer
