@@ -303,6 +303,21 @@ test('funnel pages get no nav block', () => {
   assert.ok(sitePrompt.includes('BUSINESS_NAME'), 'site page lost its nav template');
 });
 
+test('page prompts never point a delivered site at an external image host', () => {
+  // A hotlinked placeholder outlives the sale: if the host rate-limits or
+  // disappears, every site ever delivered shows broken images and the buyer
+  // has no way to fix it. The media panel is self-contained for that reason.
+  const brief = gen.normalizeBrief(null, { business: 'Acme' }, siteProduct);
+  for (const page of siteProduct.pages) {
+    const p = prompts.buildPagePrompt(page, brief, siteProduct);
+    assert.ok(!/picsum|unsplash|placehold|loremflickr|via\.placeholder/i.test(p),
+      `${page.key}: prompt names an external image host`);
+    assert.ok(!/<img[^>]*src=["']https?:/i.test(p),
+      `${page.key}: prompt shows a remote <img> src`);
+    assert.ok(p.includes('wm-media'), `${page.key}: media panel instruction missing`);
+  }
+});
+
 test('css prompt carries the palette tokens and the observed class list', () => {
   const brief = gen.normalizeBrief({ palette: { accent: '#123456' } }, { business: 'X' }, siteProduct);
   const p = prompts.buildCssPrompt(brief, ['wm-hero', 'wm-card'], siteProduct);

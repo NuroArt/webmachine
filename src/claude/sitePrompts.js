@@ -131,7 +131,25 @@ Never use inline style attributes. Never use a <style> tag. Never use Tailwind o
 
 const IMAGE_RULE = `IMAGES
 
-Use https://picsum.photos/seed/<unique-slug>/<width>/<height> for every image, with a different seed per image. Always include a real descriptive alt attribute. Wrap images in <div class="wm-media"> and give the img class="wm-media-img". Use at most 3 images per page.`;
+Never use <img>, and never link to an external image host. A delivered site has
+to keep working years from now with no network dependency the buyer did not
+choose, and a random stock photo is worse than no photo: it is always slightly
+wrong for the business.
+
+Where a photograph belongs, emit a media panel instead. The stylesheet renders
+it as a designed block in the site's own palette, so the layout is complete
+without it ever loading anything:
+
+<div class="wm-media" aria-hidden="true">
+  <!-- Photo slot: DESCRIBE THE PHOTO THAT BELONGS HERE, in plain words.
+       To use your own, replace this whole div with:
+       <img class="wm-media-img" src="your-photo.jpg" alt="DESCRIPTION"> -->
+</div>
+
+The comment is instructions for the buyer, so describe the shot specifically —
+"the owner behind the counter, daylight" beats "a photo of the business". Use at
+most 3 media panels per page, and only where a photograph genuinely earns its
+place.`;
 
 function navHtml(product, currentKey) {
   if (product.kind === 'funnel') return '';
@@ -273,7 +291,7 @@ REQUIREMENTS
 - The featured price card is visibly distinguished using the accent, not a different size that breaks the grid.
 - Form inputs are full width with a clear focus state.
 - The nav is sticky at the top with a background so content does not show through. wm-nav-link-active is visibly current. On phones the links wrap rather than overflow.
-- Images: wm-media-img is width 100%, height auto, with a radius and no layout shift.
+- Media panels: wm-media fills its column at a 16:9 aspect-ratio, with the same radius and hairline border as the cards, and a soft gradient mixed from the palette's own accent and surface colours. It must read as a deliberate design block, not as a missing image — never a flat grey box, and never an empty outline. wm-media-img, for when the buyer swaps a real photo in, is width 100%, height auto, the same radius, and causes no layout shift.
 - Include @media (prefers-reduced-motion: reduce) and drop transitions inside it.
 - Start with a short modern reset: box-sizing, margin zero, and -webkit-font-smoothing.
 - Assume the font families are already loaded. Do not write an @import or a @font-face.
