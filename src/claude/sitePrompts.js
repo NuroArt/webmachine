@@ -125,31 +125,24 @@ Every class you write starts with "wm-". Use these for structure, and invent fur
   wm-cta-band  wm-cta-band-inner
   wm-footer  wm-footer-inner  wm-footer-note
   wm-steps  wm-step  wm-step-num
-  wm-media  wm-media-img
 
 Never use inline style attributes. Never use a <style> tag. Never use Tailwind or Bootstrap class names. All styling comes from the separate stylesheet.`;
 
 const IMAGE_RULE = `IMAGES
 
-Never use <img>, and never link to an external image host. A delivered site has
-to keep working years from now with no network dependency the buyer did not
-choose, and a random stock photo is worse than no photo: it is always slightly
-wrong for the business.
+This page has no photography, and you are not to leave room for any. No <img>,
+no external image host, no background-image, and no empty box standing in for a
+picture that is not there. A reserved space reads as an image that failed to
+load, which makes a finished page look broken.
 
-Where a photograph belongs, emit a media panel instead. The stylesheet renders
-it as a designed block in the site's own palette, so the layout is complete
-without it ever loading anything:
+Design a page that is complete without photographs. The things that carry it:
+a confident type scale, generous whitespace, a clear colour hierarchy, cards and
+panels that hold real content, numbered steps, pull quotes, and tables of actual
+information such as hours, prices or what is included. A well set page of type
+looks deliberate. A page with gaps in it does not.
 
-<div class="wm-media" aria-hidden="true">
-  <!-- Photo slot: DESCRIBE THE PHOTO THAT BELONGS HERE, in plain words.
-       To use your own, replace this whole div with:
-       <img class="wm-media-img" src="your-photo.jpg" alt="DESCRIPTION"> -->
-</div>
-
-The comment is instructions for the buyer, so describe the shot specifically —
-"the owner behind the counter, daylight" beats "a photo of the business". Use at
-most 3 media panels per page, and only where a photograph genuinely earns its
-place.`;
+If a section feels empty without a picture, the answer is more substance in that
+section, not a placeholder.`;
 
 function navHtml(product, currentKey) {
   if (product.kind === 'funnel') return '';
@@ -289,9 +282,10 @@ REQUIREMENTS
 - Buttons: wm-btn-primary is a solid accent fill with accent-ink text. wm-btn-secondary is a bordered transparent button. Both get a visible hover state and a focus-visible outline.
 - Cards: surface background, hairline border, generous padding, subtle radius. No heavy drop shadows.
 - The featured price card is visibly distinguished using the accent, not a different size that breaks the grid.
-- Form inputs are full width with a clear focus state.
+- Forms: labels sit above their field, never beside it. Inputs and textareas are full width with a clear focus state.
 - The nav is sticky at the top with a background so content does not show through. wm-nav-link-active is visibly current. On phones the links wrap rather than overflow.
-- Media panels: wm-media fills its column at a 16:9 aspect-ratio, with the same radius and hairline border as the cards, and a soft gradient mixed from the palette's own accent and surface colours. It must read as a deliberate design block, not as a missing image — never a flat grey box, and never an empty outline. wm-media-img, for when the buyer swaps a real photo in, is width 100%, height auto, the same radius, and causes no layout shift.
+- Steps: wm-step puts the number in a narrow first column and the title and body stacked in a second column that takes the rest of the width. The title must not be squeezed into a narrow column of its own.
+- There is no photography on this site. Do not write a rule that reserves space for an image.
 - Include @media (prefers-reduced-motion: reduce) and drop transitions inside it.
 - Start with a short modern reset: box-sizing, margin zero, and -webkit-font-smoothing.
 - Assume the font families are already loaded. Do not write an @import or a @font-face.

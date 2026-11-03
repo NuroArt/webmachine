@@ -343,19 +343,29 @@ test('the structural fallback covers the classes a truncated run loses first', (
   );
 });
 
-test('page prompts never point a delivered site at an external image host', () => {
-  // A hotlinked placeholder outlives the sale: if the host rate-limits or
-  // disappears, every site ever delivered shows broken images and the buyer
-  // has no way to fix it. The media panel is self-contained for that reason.
+test('page prompts ask for no photography and no space reserved for it', () => {
+  // Two separate failures, both of which shipped at one point. A hotlinked
+  // placeholder outlives the sale: when the host rate-limits or disappears,
+  // every site ever delivered shows broken images. And a reserved empty box
+  // reads as an image that failed to load, which makes a finished page look
+  // broken. The generator has no photography to offer, so it leaves no gap.
   const brief = gen.normalizeBrief(null, { business: 'Acme' }, siteProduct);
   for (const page of siteProduct.pages) {
     const p = prompts.buildPagePrompt(page, brief, siteProduct);
-    assert.ok(!/picsum|unsplash|placehold|loremflickr|via\.placeholder/i.test(p),
+    // Hostnames, not words: "placeholder" is legitimate prose in the rule
+    // that forbids placeholders, and matching it bare fails the test on its
+    // own fix.
+    assert.ok(!/picsum\.photos|unsplash\.com|source\.unsplash|placehold\.(co|it)|placeholder\.com|loremflickr|placekitten|dummyimage/i.test(p),
       `${page.key}: prompt names an external image host`);
     assert.ok(!/<img[^>]*src=["']https?:/i.test(p),
       `${page.key}: prompt shows a remote <img> src`);
-    assert.ok(p.includes('wm-media'), `${page.key}: media panel instruction missing`);
+    assert.ok(!/wm-media/.test(p), `${page.key}: still offers a media placeholder`);
+    assert.ok(/no photography/i.test(p), `${page.key}: the no-photography rule is missing`);
   }
+
+  // The class contract is what the CSS stage is told to style. A class left
+  // there is a class the model may decide to use.
+  assert.ok(!/wm-media/.test(prompts.CLASS_CONTRACT), 'media classes still in the contract');
 });
 
 test('css prompt carries the palette tokens and the observed class list', () => {
