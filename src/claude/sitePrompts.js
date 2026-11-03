@@ -123,7 +123,7 @@ Every class you write starts with "wm-". Use these for structure, and invent fur
   wm-form  wm-field  wm-label  wm-input  wm-textarea
   wm-faq  wm-faq-item  wm-faq-q  wm-faq-a
   wm-cta-band  wm-cta-band-inner
-  wm-footer  wm-footer-inner  wm-footer-note
+  wm-footer  wm-footer-inner  wm-footer-note  wm-footer-links  wm-footer-link
   wm-steps  wm-step  wm-step-num
 
 Never use inline style attributes. Never use a <style> tag. Never use Tailwind or Bootstrap class names. All styling comes from the separate stylesheet.`;
@@ -223,14 +223,24 @@ ${job}
 
 ${sections.length ? `SECTION PLAN (follow this order)\n${sections.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n` : ''}
 ${nav ? `${nav}\n` : ''}
-${CLASS_CONTRACT}
+${product.kind === 'funnel'
+  ? CLASS_CONTRACT.replace(/\s+wm-footer-links\s+wm-footer-link\b/, '')
+  : CLASS_CONTRACT}
 
 ${IMAGE_RULE}
 
 LENGTH
 ${page.key === 'sales' ? 'This is the long page. 900 to 1400 words of real copy.' : 'Substantial but not padded. 350 to 700 words of real copy.'}
 
-Close the page with a <footer class="wm-footer"> containing the business name, the current year, and one short line. ${product.kind === 'funnel' ? 'The funnel footer has no links.' : ''}
+Close the page with a <footer class="wm-footer">. It is the last thing a
+visitor reads, so give it something to read: the business name, one short line
+in the brand's voice, and the practical details a customer looks for at the
+bottom of a page. Where the intake supplies them, that means the address, the
+phone number, the email and the opening hours. Never invent a detail the intake
+did not give you; include only what you actually know.${product.kind === 'funnel'
+  ? ' A funnel footer carries no links.'
+  : ` Add the page links as <nav class="wm-footer-links"> containing an <a class="wm-footer-link"> for each of: ${product.pages.map((p) => p.filename).join(', ')}.`}
+Finish with the business name and the current year in a <p class="wm-footer-note">.
 
 Every tag you open must be closed. Return only the markup.`;
 }
@@ -284,6 +294,8 @@ REQUIREMENTS
 - The featured price card is visibly distinguished using the accent, not a different size that breaks the grid.
 - Forms: labels sit above their field, never beside it. Inputs and textareas are full width with a clear focus state.
 - The nav is sticky at the top with a background so content does not show through. wm-nav-link-active is visibly current. On phones the links wrap rather than overflow.
+- The CTA band: if its inner element becomes a row on wide screens, the button group must keep its natural width so the buttons stay side by side. Give it a distinct background from the section above it.
+- The footer carries real content, so treat it as a section rather than a caption: comfortable padding, a visible top edge, footer links in a wrapping row, and the note line quieter than the detail above it.
 - Steps: wm-step puts the number in a narrow first column and the title and body stacked in a second column that takes the rest of the width. The title must not be squeezed into a narrow column of its own.
 - There is no photography on this site. Do not write a rule that reserves space for an image.
 - Include @media (prefers-reduced-motion: reduce) and drop transitions inside it.

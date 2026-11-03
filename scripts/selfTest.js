@@ -333,7 +333,8 @@ test('the structural fallback covers the classes a truncated run loses first', (
   // These sit late in the class list, so they are the first casualties when
   // the stylesheet runs long. They must never depend on the model.
   for (const cls of ['wm-form', 'wm-field', 'wm-label', 'wm-input', 'wm-textarea',
-    'wm-cta-band', 'wm-cta-band-inner', 'wm-step', 'wm-step-num']) {
+    'wm-cta-band', 'wm-cta-band-inner', 'wm-step', 'wm-step-num',
+    'wm-footer', 'wm-footer-inner', 'wm-footer-links', 'wm-footer-link']) {
     assert.ok(gen.STRUCTURAL_CSS.includes(`.${cls}`), `${cls} has no fallback rule`);
   }
   assert.strictEqual(
@@ -341,6 +342,26 @@ test('the structural fallback covers the classes a truncated run loses first', (
     (gen.STRUCTURAL_CSS.match(/\}/g) || []).length,
     'the fallback itself is unbalanced'
   );
+});
+
+test('a site footer links every page; a funnel footer links none', () => {
+  // The funnel exists to move one visitor along one path. Links out of it
+  // are exits, which is why it has never carried any.
+  const siteBrief = gen.normalizeBrief(null, { business: 'Acme' }, siteProduct);
+  const p = prompts.buildPagePrompt(siteProduct.pages[0], siteBrief, siteProduct);
+  for (const page of siteProduct.pages) {
+    assert.ok(p.includes(page.filename), `footer does not link ${page.filename}`);
+  }
+  assert.ok(p.includes('wm-footer-links'), 'site footer has no link nav');
+
+  const funnel = catalog.PRODUCTS_BY_ID.funnel;
+  const fp = prompts.buildPagePrompt(
+    funnel.pages[0],
+    gen.normalizeBrief(null, { business: 'Acme' }, funnel),
+    funnel
+  );
+  assert.ok(!fp.includes('wm-footer-links'), 'funnel footer was given links');
+  assert.ok(/carries no links/.test(fp), 'funnel footer rule missing');
 });
 
 test('page prompts ask for no photography and no space reserved for it', () => {

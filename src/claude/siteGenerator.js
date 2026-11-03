@@ -104,8 +104,17 @@ const STRUCTURAL_CSS = `
 :where(.wm-cta-band) { width: 100%; padding: 64px 20px; background: var(--surface); }
 :where(.wm-cta-band-inner) { max-width: 1120px; margin: 0 auto; }
 
+/* A horizontal band lays its children out in a row, and the button group is
+   the one child that must not shrink: squeezed, its buttons wrap one per
+   line and the band looks broken. Nothing else sets flex-shrink, so this
+   applies without overriding the band's own design. */
+:where(.wm-cta-band .wm-hero-actions) { flex-shrink: 0; flex-wrap: wrap; }
+
 :where(.wm-footer) { width: 100%; padding: 40px 20px; border-top: 1px solid var(--border); }
 :where(.wm-footer-inner) { max-width: 1120px; margin: 0 auto; }
+:where(.wm-footer-links) { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 16px; }
+:where(.wm-footer-link) { color: inherit; text-decoration: none; }
+:where(.wm-footer-link):hover { text-decoration: underline; }
 
 :where(.wm-steps) { display: grid; gap: 20px; list-style: none; padding-left: 0; }
 :where(.wm-step) { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: start; }
