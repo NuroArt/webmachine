@@ -22,6 +22,28 @@ path anywhere in this codebase.
 
 ---
 
+## What it builds
+
+Real output from the free homepage tier. One prompt in, one finished page out —
+no template picking, no theme selection. The layout, palette, type and copy are
+all generated per business, which is why no two of these look alike.
+
+| | |
+|---|---|
+| <img src="docs/screenshots/brightside-cleaning-co.jpg" width="420" alt="Brightside Cleaning Co — a light, green-accented service site"> | <img src="docs/screenshots/auralis-technologies.jpg" width="420" alt="Auralis Technologies — a dark, mint-accented managed IT site"> |
+| **Brightside Cleaning Co** — a cleaning service | **Auralis Technologies** — managed IT |
+| <img src="docs/screenshots/glamour-queens.jpg" width="420" alt="Glamour Queens — a magenta and black fashion site"> | <img src="docs/screenshots/scotts-pickles.jpg" width="420" alt="Scotts Pickles — a cream and olive food site"> |
+| **Glamour Queens** — fashion and beauty | **Scotts Pickles** — a food product |
+
+Each ships as a self-contained `index.html` and `style.css` with no build step
+and no framework — the buyer can open it, edit it, or upload it anywhere.
+
+> Photography is sourced from `picsum.photos` as a seeded placeholder, so the
+> images are decorative rather than subject-matched. Replacing them is the first
+> thing a buyer should do.
+
+---
+
 ## Layout
 
 ```
