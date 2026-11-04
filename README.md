@@ -425,3 +425,9 @@ contract no longer offers a media class at all.
 **A class on offer is a class the model may use.** `CLASS_CONTRACT` is shared
 between products, so listing `wm-footer-links` put footer links in front of the
 funnel prompt, which must never have any. The contract is filtered per product.
+
+---
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

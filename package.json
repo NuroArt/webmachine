@@ -41,5 +41,14 @@
     "ajv": "^8.17.1",
     "mongodb-memory-server": "^11.3.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Jonathan Scott",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NuroArt/webmachine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NuroArt/webmachine/issues"
+  },
+  "homepage": "https://github.com/NuroArt/webmachine#readme"
 }
