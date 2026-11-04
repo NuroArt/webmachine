@@ -30,17 +30,22 @@ all generated per business, which is why no two of these look alike.
 
 | | |
 |---|---|
-| <img src="docs/screenshots/brightside-cleaning-co.jpg" width="420" alt="Brightside Cleaning Co — a light, green-accented service site"> | <img src="docs/screenshots/auralis-technologies.jpg" width="420" alt="Auralis Technologies — a dark, mint-accented managed IT site"> |
-| **Brightside Cleaning Co** — a cleaning service | **Auralis Technologies** — managed IT |
-| <img src="docs/screenshots/glamour-queens.jpg" width="420" alt="Glamour Queens — a magenta and black fashion site"> | <img src="docs/screenshots/scotts-pickles.jpg" width="420" alt="Scotts Pickles — a cream and olive food site"> |
-| **Glamour Queens** — fashion and beauty | **Scotts Pickles** — a food product |
+| <img src="docs/screenshots/bakery.jpg" width="420" alt="Harbour Lane Bakery — warm cream and terracotta, with a timetable of the morning bakes"> | <img src="docs/screenshots/barbers.jpg" width="420" alt="Ridgeline Barbers — bold condensed caps on oxblood, with prices on the board"> |
+| **Harbour Lane Bakery** — a bakery | **Ridgeline Barbers** — a barbershop |
+| <img src="docs/screenshots/dental.jpg" width="420" alt="Northgate Dental — calm greens and a serif voice, with early and evening slots"> | <img src="docs/screenshots/studio.jpg" width="420" alt="Vela Studio — deep teal and editorial type, with staged project work"> |
+| **Northgate Dental** — a dental practice | **Vela Studio** — a design studio |
 
 Each ships as a self-contained `index.html` and `style.css` with no build step
 and no framework — the buyer can open it, edit it, or upload it anywhere.
 
-> Photography is sourced from `picsum.photos` as a seeded placeholder, so the
-> images are decorative rather than subject-matched. Replacing them is the first
-> thing a buyer should do.
+**There is no photography, by design.** A generator cannot source a photograph
+of a business it has never seen, and a stock image is always slightly wrong: a
+beach on a wedding planner, a landscape on a jar of pickles. An empty box
+reserved for a picture is worse again, because a finished page then reads as a
+broken one. So the pages are built to be complete without photographs — carried
+by type, whitespace, colour, and panels holding real information such as a
+morning bake list, a price board or opening hours. A buyer who has their own
+photographs can drop them in; nobody is left with a hole where one should be.
 
 ---
 
