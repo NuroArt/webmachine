@@ -232,6 +232,11 @@ ${IMAGE_RULE}
 LENGTH
 ${page.key === 'sales' ? 'This is the long page. 900 to 1400 words of real copy.' : 'Substantial but not padded. 350 to 700 words of real copy.'}
 
+A wm-cta-band holds a heading, one short line and the buttons. Nothing else.
+It is a strip, laid out in a single row on a wide screen, so a form or a list
+put inside it gets squeezed into a column a few words wide. A form belongs in a
+wm-section of its own, above the band.
+
 Close the page with a <footer class="wm-footer">. It is the last thing a
 visitor reads, so give it something to read: the business name, one short line
 in the brand's voice, and the practical details a customer looks for at the

@@ -104,11 +104,15 @@ const STRUCTURAL_CSS = `
 :where(.wm-cta-band) { width: 100%; padding: 64px 20px; background: var(--surface); }
 :where(.wm-cta-band-inner) { max-width: 1120px; margin: 0 auto; }
 
-/* A horizontal band lays its children out in a row, and the button group is
-   the one child that must not shrink: squeezed, its buttons wrap one per
-   line and the band looks broken. Nothing else sets flex-shrink, so this
-   applies without overriding the band's own design. */
+/* A horizontal band lays its children out in a row, and flex children shrink
+   to their longest word unless told otherwise. That turns the button group
+   into a vertical stack and a heading into one word per line. The button
+   group keeps its natural width; the heading gets a floor measured in
+   characters, so it still wraps on a narrow screen but never one word at a
+   time. Nothing else sets these, so the band's own design is untouched. */
 :where(.wm-cta-band .wm-hero-actions) { flex-shrink: 0; flex-wrap: wrap; }
+:where(.wm-cta-band-inner) { flex-wrap: wrap; }
+:where(.wm-cta-band-inner > *) { min-width: min(100%, 22ch); }
 
 :where(.wm-footer) { width: 100%; padding: 40px 20px; border-top: 1px solid var(--border); }
 :where(.wm-footer-inner) { max-width: 1120px; margin: 0 auto; }
