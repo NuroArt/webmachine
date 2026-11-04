@@ -103,11 +103,27 @@ cp .env.example .env
 ```bash
 npm run db:check   # validates MONGODB_URI and actually connects
 npm run check      # every module parses and its requires resolve
-npm test           # 44 unit tests, no network, no database
-npm run test:e2e   # 41 end-to-end tests against in-memory MongoDB
+npm test           # 79 unit tests, no network, no database
+npm run test:e2e   # 48 end-to-end tests against in-memory MongoDB
 ```
 
 `npm run test:all` runs all three. **Nothing should be deployed on a red suite.**
+
+### 3a. Look at what it actually generates
+
+```bash
+npm run try                                    # free homepage, a default business
+npm run try -- site                            # the paid five-page site
+npm run try -- preview "Ridgeline Barbers" "Cuts and hot towel shaves" "Men nearby"
+```
+
+One real API call, written to `out/<timestamp>/`, with no Telegram, no Discord
+and no database. It prints the generator's own notes plus a brace balance and a
+rule count for the classes a truncated stylesheet loses first.
+
+This exists because the only way to judge a prompt change is to read the page it
+produces. Deploying to find out is slow, and running the live bot locally means
+competing with production for the same Telegram token.
 
 ### 4. Deploy, then register the webhook
 
@@ -386,3 +402,26 @@ while telling the model not to use one teaches it to use one.
 **Never trust a model with a character-level rule a regex enforces perfectly.**
 `siteGenerator.scrubDashes` strips dashes deterministically after generation.
 The prompt rule only reduces how often it has to.
+
+**A truncated stylesheet is a silent failure, not a soft one.** The CSS stage
+was capped at 8,000 tokens, which a real five-page stylesheet exceeds. The
+response stopped mid-rule and whichever classes came last — the form, the CTA
+band, the footer — simply had no rules and fell back to browser defaults. The
+generator detected the truncation, logged a note, and shipped the build anyway.
+The cap is now 16,000, `repairCss` drops the unterminated rule and balances the
+braces (an open block swallows everything appended after it), and
+`STRUCTURAL_CSS` is appended to every build as a floor under the layout
+primitives. Every selector in it is wrapped in `:where()`, which carries no
+specificity, so a rule the model did write always wins and the fallback only
+fills genuine gaps.
+
+**Do not leave a space for something you cannot supply.** Early versions pulled
+photography from `picsum.photos`, which meant a wedding planner shipped with a
+beach. Replacing that with a styled empty panel was worse: a reserved space
+reads as an image that failed to load, so a finished page looks broken. The
+pages are now designed to be complete without photographs, and the class
+contract no longer offers a media class at all.
+
+**A class on offer is a class the model may use.** `CLASS_CONTRACT` is shared
+between products, so listing `wm-footer-links` put footer links in front of the
+funnel prompt, which must never have any. The contract is filtered per product.
