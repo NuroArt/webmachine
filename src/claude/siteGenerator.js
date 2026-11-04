@@ -112,7 +112,7 @@ const STRUCTURAL_CSS = `
    time. Nothing else sets these, so the band's own design is untouched. */
 :where(.wm-cta-band .wm-hero-actions) { flex-shrink: 0; flex-wrap: wrap; }
 :where(.wm-cta-band-inner) { flex-wrap: wrap; }
-:where(.wm-cta-band-inner > *) { min-width: min(100%, 22ch); }
+:where(.wm-cta-band-inner > :not(.wm-btn)) { min-width: min(100%, 22ch); }
 
 :where(.wm-footer) { width: 100%; padding: 40px 20px; border-top: 1px solid var(--border); }
 :where(.wm-footer-inner) { max-width: 1120px; margin: 0 auto; }

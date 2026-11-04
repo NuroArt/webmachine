@@ -237,6 +237,10 @@ It is a strip, laid out in a single row on a wide screen, so a form or a list
 put inside it gets squeezed into a column a few words wide. A form belongs in a
 wm-section of its own, above the band.
 
+The buttons go together inside a <div class="wm-hero-actions">, never as loose
+children of the band. The band spreads its children across the row, so two bare
+links end up at opposite edges with the text stranded between them.
+
 Close the page with a <footer class="wm-footer">. It is the last thing a
 visitor reads, so give it something to read: the business name, one short line
 in the brand's voice, and the practical details a customer looks for at the
@@ -246,6 +250,8 @@ did not give you; include only what you actually know.${product.kind === 'funnel
   ? ' A funnel footer carries no links.'
   : ` Add the page links as <nav class="wm-footer-links"> containing an <a class="wm-footer-link"> for each of: ${product.pages.map((p) => p.filename).join(', ')}.`}
 Finish with the business name and the current year in a <p class="wm-footer-note">.
+Use wm-footer-note once, on that last line only. It is the fine print style, so
+putting the tagline or the contact details in one shrinks them to match.
 
 Every tag you open must be closed. Return only the markup.`;
 }

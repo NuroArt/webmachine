@@ -344,6 +344,18 @@ test('the structural fallback covers the classes a truncated run loses first', (
   );
 });
 
+test('the CTA band keeps its buttons together and its fine print to one line', () => {
+  // Both seen in a live build. The band spreads its children across the row,
+  // so two loose links land at opposite edges with the text marooned between
+  // them. And wm-footer-note is the fine print style: used on the tagline as
+  // well, it shrinks the tagline to match.
+  const brief = gen.normalizeBrief(null, { business: 'Acme' }, siteProduct);
+  const p = prompts.buildPagePrompt(siteProduct.pages[0], brief, siteProduct);
+  assert.ok(/wm-hero-actions/.test(p), 'band buttons have no container rule');
+  assert.ok(/never as loose\s+children/.test(p), 'the loose-children rule is missing');
+  assert.ok(/wm-footer-note.*once|once.*wm-footer-note/s.test(p), 'footer-note is not limited to one use');
+});
+
 test('a site footer links every page; a funnel footer links none', () => {
   // The funnel exists to move one visitor along one path. Links out of it
   // are exits, which is why it has never carried any.
